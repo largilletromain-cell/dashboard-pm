@@ -669,25 +669,74 @@ export default function App(){
     const pb2=s=>{const c=PC[s]||{bg:"#eee",tx:"#333"};return'<span style="background:'+c.bg+';color:'+c.tx+';font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px">'+s+'</span>';};
     const bar=v=>{const col=pgCol(v||0);return'<div style="background:#e8e8e8;border-radius:3px;height:7px;margin:5px 0 2px"><div style="width:'+(v||0)+'%;height:100%;background:'+col+';border-radius:3px"></div></div>';};
     const odT=tasks.filter(t=>isOD(t.deadline,t.status));
-    const odB=odT.length?'<div style="margin-bottom:14px;border:1px solid #f09595;border-radius:7px;overflow:hidden"><div style="background:#FCEBEB;padding:7px 12px;font-weight:700;font-size:12px;color:#791F1F">Taches en retard ('+odT.length+')</div><table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="background:#fdf0f0"><th style="padding:4px 8px;text-align:left">Tache</th><th style="padding:4px 8px;text-align:left">Projet</th><th style="padding:4px 8px;text-align:left">Pilote</th><th style="padding:4px 8px;text-align:left">Echeance</th></tr></thead><tbody>'+odT.map(t=>{const prj=projects.find(p=>p.id===t.project_id);return'<tr><td style="padding:4px 8px">'+t.name+'</td><td style="padding:4px 8px">'+(prj?prj.name:"-")+'</td><td style="padding:4px 8px">'+t.pilot+'</td><td style="padding:4px 8px;color:#a32d2d;font-weight:700">'+fd(t.deadline)+'</td></tr>';}).join("")+'</tbody></table></div>':"";
+    const odB=odT.length?'<div class="no-break" style="margin-bottom:10px;border:1px solid #f09595;border-radius:6px;overflow:hidden"><div style="background:#FCEBEB;padding:5px 10px;font-weight:700;font-size:11px;color:#791F1F">Taches en retard ('+odT.length+')</div><table><thead><tr><th>Tache</th><th>Projet</th><th>Pilote</th><th>Echeance</th></tr></thead><tbody>'+odT.map(t=>{const prj=projects.find(p=>p.id===t.project_id);return'<tr><td>'+t.name+'</td><td>'+(prj?prj.name:"-")+'</td><td>'+t.pilot+'</td><td style="color:#a32d2d;font-weight:700">'+fd(t.deadline)+'</td></tr>';}).join("")+'</tbody></table></div>':"";
     const rows=projects.map(p=>{
       const pt=tasks.filter(t=>t.project_id===p.id);
       const prog=calcProgress(p.id,tasks);
       const odP=isOD(p.deadline,p.status);
-      const tr=pt.length?'<table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="background:#f0f0f0"><th style="padding:4px 8px;text-align:left">Tache</th><th style="padding:4px 8px;text-align:left">Statut</th><th style="padding:4px 8px;text-align:left">Pilote</th><th style="padding:4px 8px;text-align:left">Echeance</th></tr></thead><tbody>'+pt.map(t=>{const tod=isOD(t.deadline,t.status);return'<tr style="border-bottom:1px solid #eee"><td style="padding:4px 8px">'+t.name+'</td><td style="padding:4px 8px">'+sb(t.status)+'</td><td style="padding:4px 8px">'+t.pilot+'</td><td style="padding:4px 8px'+(tod?";color:#a32d2d;font-weight:700":"")+'">'+(tod?"(!!) ":"")+fd(t.deadline)+'</td></tr>';}).join("")+'</tbody></table>'
-        :'<p style="padding:6px 12px;font-size:11px;color:#999;margin:0">Aucune tache.</p>';
-      return'<div style="margin-bottom:12px;border:1px solid #d0d0d0;border-radius:7px;overflow:hidden;page-break-inside:avoid"><div style="background:#f8f8f8;padding:8px 12px;border-bottom:1px solid #d0d0d0"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:3px">'+sb(p.status)+" "+pb2(p.priority||"Moyenne")+' <span style="font-weight:700;font-size:13px">'+p.name+'</span></div><div style="font-size:11px;color:#666">Pilote: '+p.pilot+' | Echeance: <span style="'+(odP?"color:#a32d2d;font-weight:700":"")+'">'+(odP?"(!!) ":"")+fd(p.deadline)+'</span> | Avancement: '+prog+'% ('+pt.filter(t=>t.status==="Terminé").length+'/'+pt.length+' taches)</div>'+bar(prog)+(p.notes?'<div style="margin-top:4px;font-size:11px;color:#555;background:#fffbee;border:1px solid #f0e68c;border-radius:4px;padding:4px 8px">'+p.notes+'</div>':'')+'</div>'+tr+'</div>';
+      const sc=SC[p.status]||{bg:"#eee",tx:"#333"};
+      const pc2=PC[p.priority||"Moyenne"]||{bg:"#eee",tx:"#333"};
+      const col=pgCol(prog);
+      const tr=pt.length?'<table><thead><tr><th>Tache</th><th>Statut</th><th>Pilote</th><th>Echeance</th></tr></thead><tbody>'+pt.map(t=>{const tod=isOD(t.deadline,t.status);const sc2=SC[t.status]||{bg:"#eee",tx:"#333"};return'<tr><td>'+t.name+'</td><td><span class="badge" style="background:'+sc2.bg+';color:'+sc2.tx+'">'+t.status+'</span></td><td>'+t.pilot+'</td><td'+(tod?' style="color:#a32d2d;font-weight:700"':"")+'>'+(tod?"(!!) ":"")+fd(t.deadline)+'</td></tr>';}).join("")+'</tbody></table>'
+        :'<p style="padding:5px 10px;font-size:10px;color:#999">Aucune tache.</p>';
+      return'<div class="proj no-break"><div class="proj-head">'
+        +'<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
+        +'<span class="badge" style="background:'+sc.bg+';color:'+sc.tx+'">'+p.status+'</span>'
+        +'<span class="badge" style="background:'+pc2.bg+';color:'+pc2.tx+'">'+p.priority+'</span>'
+        +'<span class="proj-name">'+p.name+'</span>'
+        +(p.site?'<span class="badge" style="background:#eee;color:#555">'+p.site+'</span>':"")
+        +'</div>'
+        +'<div class="meta">Pilote: '+p.pilot+' | Echeance: <span style="'+(odP?"color:#a32d2d;font-weight:700":"")+'">'+(odP?"(!!) ":"")+fd(p.deadline)+'</span> | '
+        +pt.filter(t=>t.status==="Terminé").length+'/'+pt.length+' taches | '+prog+'%</div>'
+        +'<div class="bar-wrap"><div style="width:'+prog+'%;height:100%;background:'+col+';border-radius:3px"></div></div>'
+        +(p.notes?'<div class="note">'+p.notes+'</div>':"")
+        +'</div>'+tr+'</div>';
     }).join("");
     const {svg:ganttSvg}=buildGanttSVG(projects,tasks,760);
     const chargeSvg=buildChargeSVG(projects,tasks,pilots,700);
-    return'<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Bilan S'+wn+'</title><style>body{font-family:Arial,sans-serif;font-size:12px;color:#222;padding:20px 24px;margin:0}.kg{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}.kc{background:#f5f5f5;border-radius:6px;padding:8px 10px}.kl{font-size:10px;color:#666;margin:0 0 2px}.kv{font-size:18px;font-weight:700;margin:0}h2{font-size:12px;font-weight:700;border-bottom:1px solid #ddd;padding-bottom:3px;margin:14px 0 8px}@media print{body{padding:0}h2{page-break-before:auto}}</style></head><body>'
-      +'<div style="margin-bottom:12px"><div style="font-size:16px;font-weight:700">Bilan hebdomadaire - Physique Medicale</div><div style="font-size:10px;color:#666;margin-top:2px">Sites Galilee &amp; Bourgogne | Semaine '+wn+' | '+dl+'</div></div>'
-      +'<div class="kg"><div class="kc"><p class="kl">Projets actifs</p><p class="kv">'+activeN+'</p></div><div class="kc"><p class="kl">Taches en retard</p><p class="kv" style="color:'+(odN>0?"#a32d2d":"#222")+'">'+odN+'</p></div><div class="kc"><p class="kl">Taches terminees</p><p class="kv">'+doneN+'</p></div><div class="kc"><p class="kl">Avancement moyen</p><p class="kv">'+avgN+'%</p></div></div>'
+    return'<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Bilan S'+wn+'</title><style>'
+      +'*{box-sizing:border-box;margin:0;padding:0}'
+      +'body{font-family:Arial,sans-serif;font-size:11px;color:#222;background:#fff}'
+      +'@page{size:A4 landscape;margin:10mm 12mm}'
+      +'@media print{'
+      +'  body{width:277mm;min-height:190mm}'
+      +'  .no-break{page-break-inside:avoid}'
+      +'  h2{page-break-before:auto}'
+      +'  .page-break{page-break-before:always}'
+      +'}'
+      +'.wrap{padding:8mm 0}'
+      +'.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid #1a6bbf}'
+      +'.title{font-size:15px;font-weight:700;color:#1a6bbf}'
+      +'.subtitle{font-size:9px;color:#666;margin-top:2px}'
+      +'.kg{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px}'
+      +'.kc{background:#f5f5f5;border-radius:5px;padding:6px 8px}'
+      +'.kl{font-size:9px;color:#666;margin-bottom:1px}'
+      +'.kv{font-size:17px;font-weight:700}'
+      +'h2{font-size:11px;font-weight:700;border-bottom:1px solid #ddd;padding-bottom:3px;margin:10px 0 7px;color:#1a6bbf}'
+      +'.proj{border:1px solid #d0d0d0;border-radius:6px;overflow:hidden;margin-bottom:8px}'
+      +'.proj-head{background:#f8f8f8;padding:6px 10px;border-bottom:1px solid #ddd}'
+      +'.proj-name{font-weight:700;font-size:12px}'
+      +'.badge{font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px;display:inline-block}'
+      +'.meta{font-size:10px;color:#666;margin-top:3px}'
+      +'.bar-wrap{background:#e8e8e8;border-radius:3px;height:6px;margin:4px 0 0}'
+      +'.note{font-size:10px;color:#555;background:#fffbee;border:1px solid #f0e68c;border-radius:3px;padding:3px 7px;margin-top:4px}'
+      +'table{width:100%;border-collapse:collapse;font-size:10px}'
+      +'th{padding:3px 7px;text-align:left;background:#f0f0f0;font-weight:700;color:#555}'
+      +'td{padding:3px 7px;border-bottom:1px solid #f0f0f0}'
+      +'</style></head><body><div class="wrap">'
+      +'<div class="header"><div><div class="title">Bilan hebdomadaire — Physique Médicale</div><div class="subtitle">Sites Galilée &amp; Bourgogne | Semaine '+wn+' | '+dl+'</div></div><div style="font-size:9px;color:#aaa;text-align:right">Confidentiel interne</div></div>'
+      +'<div class="kg">'
+      +'<div class="kc"><div class="kl">Projets actifs</div><div class="kv">'+activeN+'</div></div>'
+      +'<div class="kc"><div class="kl">Taches en retard</div><div class="kv" style="color:'+(odN>0?"#a32d2d":"#222")+'">'+odN+'</div></div>'
+      +'<div class="kc"><div class="kl">Taches terminees</div><div class="kv">'+doneN+'</div></div>'
+      +'<div class="kc"><div class="kl">Avancement moyen</div><div class="kv">'+avgN+'%</div></div>'
+      +'</div>'
       +odB
-      +'<h2>Diagramme de Gantt</h2><div style="overflow-x:auto;margin-bottom:14px">'+ganttSvg+'</div>'
-      +'<h2>Charge des pilotes sur 12 mois</h2><div style="margin-bottom:14px">'+chargeSvg+'</div>'
-      +'<h2>Detail des projets</h2>'+rows
-      +'<p style="margin-top:16px;font-size:9px;color:#bbb;text-align:center">Genere le '+dl+' - Confidentiel interne</p></body></html>';
+      +'<h2>Diagramme de Gantt</h2><div style="overflow:hidden;margin-bottom:10px">'+ganttSvg+'</div>'
+      +'<div class="page-break"></div>'
+      +'<h2>Charge des pilotes sur 12 mois</h2><div style="margin-bottom:10px">'+chargeSvg+'</div>'
+      +'<h2>Détail des projets</h2>'+rows
+      +'</div></body></html>';
   }
 
   if(loading)return <Spinner/>;
@@ -818,4 +867,3 @@ export default function App(){
     </div>
   );
 }
-    
