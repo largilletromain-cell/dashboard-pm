@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 const SUPA_URL = "https://foppanucfuwcmephikvq.supabase.co";
 const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZvcHBhbnVjZnV3Y21lcGhpa3ZxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0MjU3OTQsImV4cCI6MjA5ODAwMTc5NH0.KyORf5PFTDr6KX0dc0p_CsjfYIlK_yDKOc0Fk0aqC0U";
@@ -23,6 +23,12 @@ const STATUS_ORDER={"En cours":0,"Bloqué":1,"En attente":2,"Terminé":3};
 function fd(d){if(!d)return"-";const[y,m,day]=d.split("-");return day+"/"+m+"/"+y;}
 function isOD(d,s){return s!=="Terminé"&&!!d&&d<TODAY;}
 function pgCol(v){return v>=70?"#639922":v>=40?"#BA7517":"#378ADD";}
+function calcProgress(projectId, tasks){
+  const pt=tasks.filter(t=>t.project_id===projectId);
+  if(!pt.length)return 0;
+  const done=pt.filter(t=>t.status==="Terminé").length;
+  return Math.round((done/pt.length)*100);
+}
 
 const ss={
   inp:{width:"100%",padding:"6px 9px",fontSize:12,border:"1px solid #ccc",borderRadius:6,background:"#fff",color:"#111",boxSizing:"border-box"},
@@ -51,9 +57,10 @@ function Modal({title,onClose,wide,children}){
   );
 }
 
-function ProjForm({data,pilots,onSave,onClose}){
+function ProjForm({data,pilots,tasks,onSave,onClose}){
   const [f,setF]=useState({...data});
   const set=k=>e=>setF(x=>({...x,[k]:e.target.value}));
+  const autoProgress=calcProgress(f.id,tasks);
   return(
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
       <div style={{gridColumn:"1/-1"}}><label style={ss.lbl}>Nom *</label><input style={ss.inp} value={f.name||""} onChange={set("name")} placeholder="Nom du projet"/></div>
@@ -61,14 +68,21 @@ function ProjForm({data,pilots,onSave,onClose}){
       <div><label style={ss.lbl}>Priorité</label><select style={ss.inp} value={f.priority||"Moyenne"} onChange={set("priority")}>{PRIORITIES.map(s=><option key={s}>{s}</option>)}</select></div>
       <div><label style={ss.lbl}>Pilote</label><select style={ss.inp} value={f.pilot||""} onChange={set("pilot")}>{pilots.map(s=><option key={s.id}>{s.name}</option>)}</select></div>
       <div><label style={ss.lbl}>Site</label><select style={ss.inp} value={f.site||SITES[0]} onChange={set("site")}>{SITES.map(s=><option key={s}>{s}</option>)}</select></div>
-      <div style={{gridColumn:"1/-1"}}><label style={ss.lbl}>Avancement : {f.progress||0}%</label><input type="range" min={0} max={100} step={5} value={f.progress||0} onChange={e=>setF(x=>({...x,progress:Number(e.target.value)}))} style={{width:"100%"}}/></div>
+      <div style={{gridColumn:"1/-1",background:"#f0f6ff",borderRadius:8,padding:"8px 12px"}}>
+        <div style={{fontSize:11,color:"#555",marginBottom:4}}>Avancement automatique (basé sur les tâches terminées)</div>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <PBar v={autoProgress}/>
+          <span style={{fontWeight:700,fontSize:14,color:pgCol(autoProgress),minWidth:40}}>{autoProgress}%</span>
+        </div>
+        <div style={{fontSize:10,color:"#888",marginTop:4}}>{tasks.filter(t=>t.project_id===f.id&&t.status==="Terminé").length} / {tasks.filter(t=>t.project_id===f.id).length} tâches terminées</div>
+      </div>
       <div style={{gridColumn:"1/-1"}}><label style={ss.lbl}>Pondération temps : {f.weight||0}%</label><input type="range" min={0} max={100} step={5} value={f.weight||0} onChange={e=>setF(x=>({...x,weight:Number(e.target.value)}))} style={{width:"100%"}}/></div>
       <div><label style={ss.lbl}>Échéance</label><input type="date" style={ss.inp} value={f.deadline||""} onChange={set("deadline")}/></div>
       <div><label style={ss.lbl}>Date d'ajout</label><input type="date" style={ss.inp} value={f.created_at||TODAY} onChange={set("created_at")}/></div>
       <div style={{gridColumn:"1/-1"}}><label style={ss.lbl}>Description</label><input style={ss.inp} value={f.description||""} onChange={set("description")}/></div>
       <div style={{gridColumn:"1/-1"}}><label style={ss.lbl}>Notes</label><textarea style={{...ss.inp,height:72,resize:"vertical"}} value={f.notes||""} onChange={set("notes")}/></div>
       <div style={{gridColumn:"1/-1",display:"flex",gap:8,marginTop:4}}>
-        <button style={ss.btnP} onClick={()=>(f.name||"").trim()&&onSave(f)}>Enregistrer</button>
+        <button style={ss.btnP} onClick={()=>(f.name||"").trim()&&onSave({...f,progress:autoProgress})}>Enregistrer</button>
         <button style={ss.btnS} onClick={onClose}>Annuler</button>
       </div>
     </div>
@@ -120,131 +134,228 @@ function PilotsForm({pilots,onClose,onRefresh}){
   );
 }
 
-function GanttView({projects,tasks}){
-  const [expanded,setExpanded]=useState({});
-  const toggle=id=>setExpanded(e=>({...e,[id]:!e[id]}));
-
-  const startDate=new Date(TODAY);
-  startDate.setMonth(startDate.getMonth()-1);
-  startDate.setDate(1);
-  const endDate=new Date(startDate);
-  endDate.setFullYear(endDate.getFullYear()+1);
+function buildGanttSVG(projects, tasks, W=800){
+  const startDate=new Date(TODAY); startDate.setMonth(startDate.getMonth()-1); startDate.setDate(1);
+  const endDate=new Date(startDate); endDate.setFullYear(endDate.getFullYear()+1);
   const totalDays=(endDate-startDate)/86400000;
-  const LW=195,DW=2.8,CW=totalDays*DW,TW=LW+CW+10,RH=30,HH=52;
-
-  function xp(ds){
-    if(!ds)return LW;
-    const days=(new Date(ds)-startDate)/86400000;
-    return LW+Math.max(0,Math.min(CW,days*DW));
-  }
-
-  const months=[];const mc=new Date(startDate);
+  const LW=180, DW=(W-LW-10)/totalDays, RH=28, HH=48;
+  function xp(ds){if(!ds)return LW;const days=(new Date(ds)-startDate)/86400000;return LW+Math.max(0,Math.min((W-LW-10),days*DW));}
+  const months=[]; const mc=new Date(startDate);
   while(mc<endDate){months.push(new Date(mc));mc.setMonth(mc.getMonth()+1);}
-
-  const weeks=[];const wc=new Date(startDate);
-  const wd=wc.getDay();wc.setDate(wc.getDate()+(wd===0?1:wd===1?0:8-wd));
+  const weeks=[]; const wc=new Date(startDate);
+  const wd=wc.getDay(); wc.setDate(wc.getDate()+(wd===0?1:wd===1?0:8-wd));
   while(wc<endDate){
     const d=new Date(Date.UTC(wc.getFullYear(),wc.getMonth(),wc.getDate()));
     d.setUTCDate(d.getUTCDate()+4-(d.getUTCDay()||7));
     const wn=Math.ceil((((d-new Date(Date.UTC(d.getUTCFullYear(),0,1)))/86400000)+1)/7);
-    weeks.push({date:new Date(wc),num:wn});
-    wc.setDate(wc.getDate()+7);
+    weeks.push({date:new Date(wc),num:wn}); wc.setDate(wc.getDate()+7);
   }
+  const rows=[];
+  projects.forEach(p=>{
+    rows.push({type:"p",data:p});
+    tasks.filter(t=>t.project_id===p.id).forEach(t=>rows.push({type:"t",data:t}));
+  });
+  const TH=HH+rows.length*RH+8;
+  const todayX=xp(TODAY);
+  let svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${TH}" style="font-family:Arial,sans-serif">`;
+  svg+=`<rect width="${W}" height="${TH}" fill="#fafafa" rx="4"/>`;
+  months.forEach((m,i)=>{
+    const x1=xp(m.toISOString().split("T")[0]);
+    const nx=new Date(m); nx.setMonth(nx.getMonth()+1);
+    const x2=xp(nx.toISOString().split("T")[0]);
+    svg+=`<rect x="${x1}" y="${HH}" width="${x2-x1}" height="${TH-HH}" fill="${i%2===0?"#f8f8f8":"#f2f2f2"}"/>`;
+  });
+  weeks.forEach(w=>{const x=xp(w.date.toISOString().split("T")[0]);svg+=`<line x1="${x}" y1="${HH}" x2="${x}" y2="${TH}" stroke="#e0e0e0" stroke-width="0.5"/>`;});
+  svg+=`<rect x="0" y="0" width="${W}" height="26" fill="#1a6bbf"/>`;
+  months.forEach((m,i)=>{
+    const x1=xp(m.toISOString().split("T")[0]);
+    const nx=new Date(m); nx.setMonth(nx.getMonth()+1);
+    const x2=xp(nx.toISOString().split("T")[0]);
+    const mw=x2-x1;
+    svg+=`<line x1="${x1}" y1="0" x2="${x1}" y2="26" stroke="rgba(255,255,255,0.3)" stroke-width="0.5"/>`;
+    if(mw>24)svg+=`<text x="${x1+mw/2}" y="17" font-size="9.5" fill="#fff" font-weight="bold" text-anchor="middle">${m.toLocaleDateString("fr-FR",{month:"short",year:"2-digit"})}</text>`;
+  });
+  svg+=`<rect x="0" y="26" width="${W}" height="22" fill="#eef3fa"/>`;
+  weeks.forEach(w=>{
+    const x=xp(w.date.toISOString().split("T")[0]);
+    svg+=`<line x1="${x}" y1="26" x2="${x}" y2="48" stroke="#ccc" stroke-width="0.5"/>`;
+    if(DW*7>14)svg+=`<text x="${x+2}" y="39" font-size="7.5" fill="#888">S${w.num}</text>`;
+  });
+  svg+=`<rect x="0" y="0" width="${LW}" height="${HH}" fill="#1558a0"/>`;
+  svg+=`<text x="8" y="28" font-size="10" fill="#fff" font-weight="bold">Projet / Tâche</text>`;
+  svg+=`<line x1="0" y1="${HH}" x2="${W}" y2="${HH}" stroke="#ccc" stroke-width="1"/>`;
+  rows.forEach((row,i)=>{
+    const y=HH+i*RH;
+    const isP=row.type==="p";
+    const item=row.data;
+    const ci=isP?projects.findIndex(p=>p.id===item.id):0;
+    const col=isP?GCOLS[ci%GCOLS.length]:"#94a3b8";
+    const x1=xp(item.created_at); const x2=Math.max(xp(item.deadline),x1+3);
+    const prog=isP?calcProgress(item.id,tasks):0;
+    const pw=(x2-x1)*prog/100;
+    const nm=item.name.length>(isP?24:22)?item.name.slice(0,isP?22:20)+"...":item.name;
+    const sc=SC[item.status]||{bg:"#eee",tx:"#333"};
+    svg+=`<rect x="0" y="${y}" width="${W}" height="${RH}" fill="${i%2===0?"#fff":"#fafafa"}"/>`;
+    svg+=`<line x1="0" y1="${y+RH}" x2="${W}" y2="${y+RH}" stroke="#f0f0f0" stroke-width="0.5"/>`;
+    svg+=`<rect x="0" y="${y}" width="${LW}" height="${RH}" fill="${isP?"#f8faff":"#f2f5ff"}"/>`;
+    svg+=`<line x1="${LW}" y1="${y}" x2="${LW}" y2="${y+RH}" stroke="#ddd" stroke-width="1"/>`;
+    svg+=`<text x="${isP?8:22}" y="${y+RH/2+3.5}" font-size="${isP?10:9}" fill="${isP?"#111":"#555"}" font-weight="${isP?"bold":"normal"}">${isP?"":"↳ "}${nm}</text>`;
+    if(isP){
+      svg+=`<rect x="${LW-48}" y="${y+7}" width="42" height="12" rx="3" fill="${sc.bg}"/>`;
+      svg+=`<text x="${LW-27}" y="${y+16}" font-size="7" fill="${sc.tx}" font-weight="bold" text-anchor="middle">${item.status}</text>`;
+    }
+    if(item.deadline){
+      svg+=`<rect x="${x1}" y="${y+6}" width="${Math.max(x2-x1,3)}" height="${RH-12}" rx="3" fill="${col}${isP?"28":"18"}" stroke="${col}" stroke-width="${isP?"1.5":"1"}"/>`;
+      if(isP&&pw>0)svg+=`<rect x="${x1}" y="${y+6}" width="${pw}" height="${RH-12}" rx="3" fill="${col}"/>`;
+      if(isP&&pw>14)svg+=`<text x="${x1+pw/2}" y="${y+RH/2+3.5}" font-size="7.5" fill="#fff" font-weight="bold" text-anchor="middle">${prog}%</text>`;
+      if(!isP)svg+=`<rect x="${x1}" y="${y+9}" width="${Math.max(x2-x1,3)}" height="${RH-18}" rx="2" fill="${col}"/>`;
+    }
+  });
+  svg+=`<line x1="${todayX}" y1="0" x2="${todayX}" y2="${TH}" stroke="#e24b4a" stroke-width="1.5" stroke-dasharray="4,3"/>`;
+  svg+=`<rect x="${todayX-14}" y="${TH-16}" width="28" height="14" rx="3" fill="#e24b4a"/>`;
+  svg+=`<text x="${todayX}" y="${TH-6}" font-size="8" fill="#fff" text-anchor="middle" font-weight="bold">Auj.</text>`;
+  svg+=`</svg>`;
+  return {svg, height:TH};
+}
 
+function GanttView({projects,tasks}){
+  const [expanded,setExpanded]=useState({});
+  const toggle=id=>setExpanded(e=>({...e,[id]:!e[id]}));
+  const startDate=new Date(TODAY); startDate.setMonth(startDate.getMonth()-1); startDate.setDate(1);
+  const endDate=new Date(startDate); endDate.setFullYear(endDate.getFullYear()+1);
+  const totalDays=(endDate-startDate)/86400000;
+  const LW=195,DW=2.8,CW=totalDays*DW,TW=LW+CW+10,RH=30,HH=52;
+  function xp(ds){if(!ds)return LW;const days=(new Date(ds)-startDate)/86400000;return LW+Math.max(0,Math.min(CW,days*DW));}
+  const months=[]; const mc=new Date(startDate);
+  while(mc<endDate){months.push(new Date(mc));mc.setMonth(mc.getMonth()+1);}
+  const weeks=[]; const wc=new Date(startDate);
+  const wd=wc.getDay(); wc.setDate(wc.getDate()+(wd===0?1:wd===1?0:8-wd));
+  while(wc<endDate){
+    const d=new Date(Date.UTC(wc.getFullYear(),wc.getMonth(),wc.getDate()));
+    d.setUTCDate(d.getUTCDate()+4-(d.getUTCDay()||7));
+    const wn=Math.ceil((((d-new Date(Date.UTC(d.getUTCFullYear(),0,1)))/86400000)+1)/7);
+    weeks.push({date:new Date(wc),num:wn}); wc.setDate(wc.getDate()+7);
+  }
   const rows=[];
   projects.forEach(p=>{
     rows.push({type:"p",data:p});
     if(expanded[p.id])tasks.filter(t=>t.project_id===p.id).forEach(t=>rows.push({type:"t",data:t}));
   });
-
   const TH=HH+rows.length*RH+8;
   const todayX=xp(TODAY);
-
   if(!projects.length)return <p style={{color:"#888",fontSize:13}}>Aucun projet.</p>;
-
   return(
     <div style={{overflowX:"auto",overflowY:"auto",maxHeight:"70vh"}}>
       <svg width={TW} height={TH} style={{fontFamily:"Arial,sans-serif",display:"block"}}>
         <rect width={TW} height={TH} fill="#fafafa" rx="4"/>
-        {months.map((m,i)=>{
-          const x1=xp(m.toISOString().split("T")[0]);
-          const nx=new Date(m);nx.setMonth(nx.getMonth()+1);
-          const x2=xp(nx.toISOString().split("T")[0]);
-          return <rect key={i} x={x1} y={HH} width={x2-x1} height={TH-HH} fill={i%2===0?"#f8f8f8":"#f2f2f2"}/>;
-        })}
+        {months.map((m,i)=>{const x1=xp(m.toISOString().split("T")[0]);const nx=new Date(m);nx.setMonth(nx.getMonth()+1);const x2=xp(nx.toISOString().split("T")[0]);return<rect key={i} x={x1} y={HH} width={x2-x1} height={TH-HH} fill={i%2===0?"#f8f8f8":"#f2f2f2"}/>;  })}
         {weeks.map((w,i)=><line key={i} x1={xp(w.date.toISOString().split("T")[0])} y1={HH} x2={xp(w.date.toISOString().split("T")[0])} y2={TH} stroke="#e0e0e0" strokeWidth="0.5"/>)}
         <rect x={0} y={0} width={TW} height={26} fill="#1a6bbf"/>
-        {months.map((m,i)=>{
-          const x1=xp(m.toISOString().split("T")[0]);
-          const nx=new Date(m);nx.setMonth(nx.getMonth()+1);
-          const x2=xp(nx.toISOString().split("T")[0]);
-          const w=x2-x1;
-          return <g key={i}><line x1={x1} y1={0} x2={x1} y2={26} stroke="rgba(255,255,255,0.3)" strokeWidth="0.5"/>
-            {w>28&&<text x={x1+w/2} y={17} fontSize="10" fill="#fff" fontWeight="bold" textAnchor="middle">{m.toLocaleDateString("fr-FR",{month:"short",year:"2-digit"})}</text>}
-          </g>;
-        })}
+        {months.map((m,i)=>{const x1=xp(m.toISOString().split("T")[0]);const nx=new Date(m);nx.setMonth(nx.getMonth()+1);const x2=xp(nx.toISOString().split("T")[0]);const w=x2-x1;return<g key={i}><line x1={x1} y1={0} x2={x1} y2={26} stroke="rgba(255,255,255,0.3)" strokeWidth="0.5"/>{w>24&&<text x={x1+w/2} y={17} fontSize="10" fill="#fff" fontWeight="bold" textAnchor="middle">{m.toLocaleDateString("fr-FR",{month:"short",year:"2-digit"})}</text>}</g>;})}
         <rect x={0} y={26} width={TW} height={26} fill="#eef3fa"/>
-        {weeks.map((w,i)=>{
-          const x=xp(w.date.toISOString().split("T")[0]);
-          return <g key={i}><line x1={x} y1={26} x2={x} y2={52} stroke="#ccc" strokeWidth="0.5"/>
-            {DW*7>16&&<text x={x+2} y={40} fontSize="8" fill="#888">S{w.num}</text>}
-          </g>;
-        })}
+        {weeks.map((w,i)=>{const x=xp(w.date.toISOString().split("T")[0]);return<g key={i}><line x1={x} y1={26} x2={x} y2={52} stroke="#ccc" strokeWidth="0.5"/>{DW*7>14&&<text x={x+2} y={40} fontSize="8" fill="#888">S{w.num}</text>}</g>;})}
         <rect x={0} y={0} width={LW} height={HH} fill="#1558a0"/>
         <text x={8} y={30} fontSize="11" fill="#fff" fontWeight="bold">Projet / Tâche</text>
         <line x1={0} y1={HH} x2={TW} y2={HH} stroke="#ccc" strokeWidth="1"/>
-
         {rows.map((row,i)=>{
-          const y=HH+i*RH;
-          const isP=row.type==="p";
-          const item=row.data;
+          const y=HH+i*RH; const isP=row.type==="p"; const item=row.data;
           const ci=isP?projects.findIndex(p=>p.id===item.id):0;
           const col=isP?GCOLS[ci%GCOLS.length]:"#94a3b8";
-          const x1=xp(item.created_at);
-          const x2=Math.max(xp(item.deadline),x1+4);
-          const pw=isP?(x2-x1)*(item.progress||0)/100:0;
+          const x1=xp(item.created_at),x2=Math.max(xp(item.deadline),x1+4);
+          const prog=isP?calcProgress(item.id,tasks):0;
+          const pw=(x2-x1)*prog/100;
           const nm=item.name.length>(isP?26:24)?item.name.slice(0,isP?24:22)+"...":item.name;
           const hasT=isP&&tasks.filter(t=>t.project_id===item.id).length>0;
-          const c=SC[item.status]||{bg:"#eee",tx:"#333"};
+          const sc=SC[item.status]||{bg:"#eee",tx:"#333"};
           return(
             <g key={row.type+item.id}>
               <rect x={0} y={y} width={TW} height={RH} fill={i%2===0?"#fff":"#fafafa"}/>
               <line x1={0} y1={y+RH} x2={TW} y2={y+RH} stroke="#f0f0f0" strokeWidth="0.5"/>
               <rect x={0} y={y} width={LW} height={RH} fill={isP?"#f8faff":"#f2f5ff"}/>
               <line x1={LW} y1={y} x2={LW} y2={y+RH} stroke="#ddd" strokeWidth="1"/>
-              {isP&&hasT&&(
-                <text x={6} y={y+RH/2+4} fontSize="11" fill="#1a6bbf" style={{cursor:"pointer"}} onClick={()=>toggle(item.id)}>
-                  {expanded[item.id]?"▼":"▶"}
-                </text>
-              )}
-              <text x={isP?20:30} y={y+RH/2+4} fontSize={isP?10.5:9.5} fill={isP?"#111":"#555"} fontWeight={isP?"bold":"normal"}>
-                {!isP&&"↳ "}{nm}
-              </text>
-              {isP&&<g>
-                <rect x={LW-50} y={y+8} width={44} height={13} rx="3" fill={c.bg}/>
-                <text x={LW-28} y={y+18} fontSize="7.5" fill={c.tx} fontWeight="bold" textAnchor="middle">{item.status}</text>
-              </g>}
+              {isP&&hasT&&<text x={6} y={y+RH/2+4} fontSize="12" fill="#1a6bbf" style={{cursor:"pointer"}} onClick={()=>toggle(item.id)}>{expanded[item.id]?"▼":"▶"}</text>}
+              <text x={isP?20:30} y={y+RH/2+4} fontSize={isP?10.5:9.5} fill={isP?"#111":"#555"} fontWeight={isP?"bold":"normal"}>{!isP&&"↳ "}{nm}</text>
+              {isP&&<g><rect x={LW-50} y={y+8} width={44} height={13} rx="3" fill={sc.bg}/><text x={LW-28} y={y+18} fontSize="7.5" fill={sc.tx} fontWeight="bold" textAnchor="middle">{item.status}</text></g>}
               {item.deadline&&<g>
                 <rect x={x1} y={y+7} width={Math.max(x2-x1,3)} height={RH-14} rx="3" fill={col+(isP?"28":"18")} stroke={col} strokeWidth={isP?"1.5":"1"}/>
                 {isP&&pw>0&&<rect x={x1} y={y+7} width={pw} height={RH-14} rx="3" fill={col}/>}
-                {isP&&pw>14&&<text x={x1+pw/2} y={y+RH/2+3.5} fontSize="8" fill="#fff" fontWeight="bold" textAnchor="middle">{item.progress}%</text>}
+                {isP&&pw>14&&<text x={x1+pw/2} y={y+RH/2+3.5} fontSize="8" fill="#fff" fontWeight="bold" textAnchor="middle">{prog}%</text>}
                 {!isP&&<rect x={x1} y={y+10} width={Math.max(x2-x1,3)} height={RH-20} rx="2" fill={col}/>}
               </g>}
             </g>
           );
         })}
         <line x1={todayX} y1={0} x2={todayX} y2={TH} stroke="#e24b4a" strokeWidth="1.5" strokeDasharray="4,3"/>
-        <rect x={todayX-12} y={TH-16} width={24} height={14} rx="3" fill="#e24b4a"/>
+        <rect x={todayX-14} y={TH-16} width={28} height={14} rx="3" fill="#e24b4a"/>
         <text x={todayX} y={TH-6} fontSize="8" fill="#fff" textAnchor="middle" fontWeight="bold">Auj.</text>
       </svg>
     </div>
   );
 }
 
+function buildChargeSVG(projects,tasks,pilots,W=700){
+  const months=[]; const now=new Date(TODAY);
+  for(let i=-1;i<11;i++)months.push(new Date(now.getFullYear(),now.getMonth()+i,1));
+  const data=months.map(m=>{
+    const mEnd=new Date(m.getFullYear(),m.getMonth()+1,0);
+    const loads={};
+    pilots.forEach(p=>{
+      const pW=projects.filter(pr=>pr.pilot===p.name&&pr.status!=="Terminé"&&pr.deadline&&new Date(pr.created_at||pr.deadline)<=mEnd&&new Date(pr.deadline)>=m).reduce((s,pr)=>s+(pr.weight||0),0);
+      const tW=tasks.filter(t=>t.pilot===p.name&&t.status!=="Terminé"&&t.deadline&&new Date(t.created_at||t.deadline)<=mEnd&&new Date(t.deadline)>=m).reduce((s,t)=>s+(t.weight||0),0);
+      loads[p.name]=pW+tW;
+    });
+    return{label:m.toLocaleDateString("fr-FR",{month:"short",year:"2-digit"}),month:m,loads};
+  });
+  const CH=280,PL=45,PB=50,PT=20,PR=15;
+  const cW=W-PL-PR,cH=CH-PB-PT;
+  const maxV=Math.max(120,...data.flatMap(d=>Object.values(d.loads)));
+  const colW=cW/data.length;
+  function yp(v){return PT+cH-(v/maxV*cH);}
+  let svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${CH}" style="font-family:Arial,sans-serif">`;
+  svg+=`<rect width="${W}" height="${CH}" fill="#fafafa" rx="4"/>`;
+  [0,25,50,75,100].forEach(v=>{
+    const y=yp(v);
+    svg+=`<line x1="${PL}" y1="${y}" x2="${W-PR}" y2="${y}" stroke="${v===100?"#e24b4a":"#e8e8e8"}" stroke-width="${v===100?"1.5":"0.5"}" stroke-dasharray="${v===100?"5,3":""}"/>`;
+    svg+=`<text x="${PL-4}" y="${y+4}" font-size="9" fill="${v===100?"#e24b4a":"#999"}" text-anchor="end">${v}%</text>`;
+  });
+  svg+=`<rect x="${PL}" y="${PT}" width="${cW}" height="${yp(100)-PT}" fill="#fff0f0" opacity="0.3"/>`;
+  pilots.forEach((p,pi)=>{
+    const col=GCOLS[pi%GCOLS.length];
+    const pts=data.map((d,i)=>[PL+i*colW+colW/2,yp(d.loads[p.name]||0)]);
+    const path=pts.map(([x,y],i)=>(i===0?"M":"L")+x+","+y).join(" ");
+    svg+=`<path d="${path}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round"/>`;
+    pts.forEach(([x,y],i)=>{
+      svg+=`<circle cx="${x}" cy="${y}" r="3.5" fill="${col}" stroke="#fff" stroke-width="1.5"/>`;
+      if((data[i].loads[p.name]||0)>0)svg+=`<text x="${x}" y="${y-7}" font-size="7.5" fill="${col}" text-anchor="middle" font-weight="bold">${data[i].loads[p.name]}%</text>`;
+    });
+  });
+  data.forEach((d,i)=>{
+    const x=PL+i*colW+colW/2;
+    const isNow=d.month.getMonth()===now.getMonth()&&d.month.getFullYear()===now.getFullYear();
+    svg+=`<line x1="${x}" y1="${PT}" x2="${x}" y2="${CH-PB}" stroke="#ececec" stroke-width="0.5"/>`;
+    svg+=`<rect x="${x-14}" y="${CH-PB+3}" width="28" height="14" rx="3" fill="${isNow?"#1a6bbf":"transparent"}"/>`;
+    svg+=`<text x="${x}" y="${CH-PB+13}" font-size="8.5" fill="${isNow?"#fff":"#666"}" text-anchor="middle" font-weight="${isNow?"bold":"normal"}">${d.label}</text>`;
+  });
+  svg+=`<line x1="${PL}" y1="${PT}" x2="${PL}" y2="${CH-PB}" stroke="#ccc" stroke-width="1"/>`;
+  svg+=`<line x1="${PL}" y1="${CH-PB}" x2="${W-PR}" y2="${CH-PB}" stroke="#ccc" stroke-width="1"/>`;
+  svg+=`<text x="${W-PR}" y="${yp(100)-4}" font-size="8" fill="#e24b4a" text-anchor="end">Seuil 100%</text>`;
+  // Légende
+  pilots.forEach((p,pi)=>{
+    const col=GCOLS[pi%GCOLS.length];
+    const lx=PL+(pi*(cW/pilots.length));
+    svg+=`<circle cx="${lx+6}" cy="${CH-8}" r="4" fill="${col}"/>`;
+    svg+=`<text x="${lx+13}" y="${CH-4}" font-size="8" fill="#333">${p.name.split(" ")[0]}</text>`;
+  });
+  svg+=`</svg>`;
+  return svg;
+}
+
 function WorkloadChart({projects,tasks,pilots}){
-  const months=[];
-  const now=new Date(TODAY);
-  for(let i=-1;i<11;i++){months.push(new Date(now.getFullYear(),now.getMonth()+i,1));}
+  const [visible,setVisible]=useState(()=>Object.fromEntries(pilots.map(p=>[p.name,true])));
+  useEffect(()=>{setVisible(v=>{const nv={...v};pilots.forEach(p=>{if(!(p.name in nv))nv[p.name]=true;});return nv;});},[pilots]);
+  const activePilots=pilots.filter(p=>visible[p.name]);
+  const months=[]; const now=new Date(TODAY);
+  for(let i=-1;i<11;i++)months.push(new Date(now.getFullYear(),now.getMonth()+i,1));
   const data=months.map(m=>{
     const mEnd=new Date(m.getFullYear(),m.getMonth()+1,0);
     const loads={};
@@ -257,55 +368,46 @@ function WorkloadChart({projects,tasks,pilots}){
   });
   const W=680,CH=280,PL=45,PB=50,PT=20,PR=15;
   const cW=W-PL-PR,cH=CH-PB-PT;
-  const maxV=Math.max(120,...data.flatMap(d=>Object.values(d.loads)));
+  const maxV=Math.max(120,...data.flatMap(d=>activePilots.map(p=>d.loads[p.name]||0)));
   const colW=cW/data.length;
-  const actPilots=pilots.filter(p=>data.some(d=>(d.loads[p.name]||0)>0));
   function yp(v){return PT+cH-(v/maxV*cH);}
-
   return(
     <div style={{background:"#fff",border:"1px solid #e0e0e0",borderRadius:10,padding:"14px",marginBottom:16}}>
-      <div style={{fontWeight:700,fontSize:13,color:"#111",marginBottom:8}}>Évolution de la charge sur 12 mois</div>
-      <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:10}}>
-        {actPilots.map((p,i)=>(
-          <div key={p.id} style={{display:"flex",alignItems:"center",gap:5,fontSize:11}}>
-            <div style={{width:12,height:12,borderRadius:"50%",background:GCOLS[i%GCOLS.length]}}/>
-            <span>{p.name}</span>
-          </div>
+      <div style={{fontWeight:700,fontSize:13,color:"#111",marginBottom:10}}>Évolution de la charge sur 12 mois</div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
+        {pilots.map((p,i)=>(
+          <label key={p.id} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,cursor:"pointer",padding:"3px 8px",border:"1px solid",borderColor:visible[p.name]?GCOLS[i%GCOLS.length]:"#ddd",borderRadius:6,background:visible[p.name]?GCOLS[i%GCOLS.length]+"18":"#f9f9f9",userSelect:"none"}}>
+            <input type="checkbox" checked={!!visible[p.name]} onChange={e=>setVisible(v=>({...v,[p.name]:e.target.checked}))} style={{accentColor:GCOLS[i%GCOLS.length]}}/>
+            <div style={{width:10,height:10,borderRadius:"50%",background:visible[p.name]?GCOLS[i%GCOLS.length]:"#ccc",flexShrink:0}}/>
+            <span style={{color:visible[p.name]?"#111":"#aaa",fontWeight:visible[p.name]?600:400}}>{p.name}</span>
+          </label>
         ))}
-        {!actPilots.length&&<span style={{fontSize:11,color:"#aaa"}}>Aucune pondération définie — ajoutez des % dans vos projets/tâches</span>}
       </div>
       <div style={{overflowX:"auto"}}>
         <svg width={W} height={CH} style={{fontFamily:"Arial,sans-serif",display:"block"}}>
           <rect width={W} height={CH} fill="#fafafa" rx="4"/>
-          {[0,25,50,75,100].map(v=>{
-            const y=yp(v);
-            return <g key={v}>
-              <line x1={PL} y1={y} x2={W-PR} y2={y} stroke={v===100?"#e24b4a":"#e8e8e8"} strokeWidth={v===100?"1.5":"0.5"} strokeDasharray={v===100?"5,3":""}/>
-              <text x={PL-4} y={y+4} fontSize="9" fill={v===100?"#e24b4a":"#999"} textAnchor="end">{v}%</text>
-            </g>;
-          })}
-          <rect x={PL} y={PT} width={cW} height={yp(100)-PT} fill="#fff0f0" opacity="0.4"/>
-          {actPilots.map((p,pi)=>{
-            const col=GCOLS[pi%GCOLS.length];
+          {[0,25,50,75,100].map(v=>{const y=yp(v);return<g key={v}><line x1={PL} y1={y} x2={W-PR} y2={y} stroke={v===100?"#e24b4a":"#e8e8e8"} strokeWidth={v===100?"1.5":"0.5"} strokeDasharray={v===100?"5,3":""}/><text x={PL-4} y={y+4} fontSize="9" fill={v===100?"#e24b4a":"#999"} textAnchor="end">{v}%</text></g>;})}
+          <rect x={PL} y={PT} width={cW} height={yp(100)-PT} fill="#fff0f0" opacity="0.3"/>
+          {activePilots.map((p,pi)=>{
+            const realIdx=pilots.findIndex(x=>x.id===p.id);
+            const col=GCOLS[realIdx%GCOLS.length];
             const pts=data.map((d,i)=>[PL+i*colW+colW/2,yp(d.loads[p.name]||0)]);
             const path=pts.map(([x,y],i)=>(i===0?"M":"L")+x+","+y).join(" ");
-            return <g key={p.id}>
+            return<g key={p.id}>
               <path d={path} fill="none" stroke={col} strokeWidth="2" strokeLinejoin="round"/>
-              {pts.map(([x,y],i)=>(
-                <g key={i}>
-                  <circle cx={x} cy={y} r="4" fill={col} stroke="#fff" strokeWidth="1.5"/>
-                  {(data[i].loads[p.name]||0)>0&&<text x={x} y={y-8} fontSize="8" fill={col} textAnchor="middle" fontWeight="bold">{data[i].loads[p.name]}%</text>}
-                </g>
-              ))}
+              {pts.map(([x,y],i)=><g key={i}>
+                <circle cx={x} cy={y} r="4" fill={col} stroke="#fff" strokeWidth="1.5"/>
+                {(data[i].loads[p.name]||0)>0&&<text x={x} y={y-8} fontSize="8" fill={col} textAnchor="middle" fontWeight="bold">{data[i].loads[p.name]}%</text>}
+              </g>)}
             </g>;
           })}
           {data.map((d,i)=>{
             const x=PL+i*colW+colW/2;
             const isNow=d.month.getMonth()===now.getMonth()&&d.month.getFullYear()===now.getFullYear();
-            return <g key={i}>
+            return<g key={i}>
               <line x1={x} y1={PT} x2={x} y2={CH-PB} stroke="#ececec" strokeWidth="0.5"/>
               <rect x={x-14} y={CH-PB+3} width={28} height={14} rx="3" fill={isNow?"#1a6bbf":"transparent"}/>
-              <text x={x} y={CH-PB+13} fontSize="9" fill={isNow?"#fff":"#666"} textAnchor="middle" fontWeight={isNow?"bold":"normal"}>{d.label}</text>
+              <text x={x} y={CH-PB+13} fontSize="8.5" fill={isNow?"#fff":"#666"} textAnchor="middle" fontWeight={isNow?"bold":"normal"}>{d.label}</text>
             </g>;
           })}
           <line x1={PL} y1={PT} x2={PL} y2={CH-PB} stroke="#ccc" strokeWidth="1"/>
@@ -328,7 +430,7 @@ function WorkloadTable({projects,tasks,pilots}){
   });
   return(
     <div style={{background:"#fff",border:"1px solid #e0e0e0",borderRadius:10,padding:"12px",marginBottom:16}}>
-      <div style={{fontWeight:700,fontSize:13,color:"#111",marginBottom:10}}>
+      <div style={{fontWeight:700,fontSize:13,marginBottom:10}}>
         Charge du jour — {new Date().toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}
       </div>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
@@ -370,8 +472,7 @@ function WorkloadTable({projects,tasks,pilots}){
 function PilotCard({pilot,projects,tasks,dateFrom,dateTo}){
   function inRange(item){
     if(!dateFrom&&!dateTo)return true;
-    const raw=item.deadline||item.created_at;
-    if(!raw)return true;
+    const raw=item.deadline||item.created_at; if(!raw)return true;
     const d=new Date(raw);
     if(dateFrom&&d<new Date(dateFrom))return false;
     if(dateTo&&d>new Date(dateTo))return false;
@@ -381,7 +482,7 @@ function PilotCard({pilot,projects,tasks,dateFrom,dateTo}){
   const tAll=tasks.filter(t=>t.pilot===pilot&&inRange(t));
   return(
     <div style={{background:"#fff",border:"1px solid #e0e0e0",borderRadius:10,padding:"12px 14px",marginBottom:12}}>
-      <div style={{fontWeight:700,fontSize:14,color:"#111",marginBottom:10,paddingBottom:6,borderBottom:"2px solid #1a6bbf",display:"flex",alignItems:"center",gap:8}}>
+      <div style={{fontWeight:700,fontSize:14,marginBottom:10,paddingBottom:6,borderBottom:"2px solid #1a6bbf",display:"flex",alignItems:"center",gap:8}}>
         <span style={{background:"#1a6bbf",color:"#fff",borderRadius:"50%",width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,flexShrink:0}}>{pilot[0]}</span>
         {pilot}
       </div>
@@ -395,31 +496,28 @@ function PilotCard({pilot,projects,tasks,dateFrom,dateTo}){
       </div>
       {pAll.length>0&&<div style={{marginBottom:8}}>
         <div style={{fontWeight:600,fontSize:11,color:"#1a6bbf",marginBottom:4}}>Projets :</div>
-        {pAll.map(p=>(
+        {pAll.map(p=>{const prog=calcProgress(p.id,tasks);return(
           <div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 8px",background:p.status==="Terminé"?"#f3fbee":"#f7f9ff",borderRadius:5,marginBottom:3,fontSize:11}}>
             <span style={{fontWeight:500}}>{p.name}</span>
             <div style={{display:"flex",gap:5,flexShrink:0}}>
               <span style={{background:SC[p.status]?.bg||"#eee",color:SC[p.status]?.tx||"#333",fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:3}}>{p.status}</span>
               <span style={{fontSize:10,color:isOD(p.deadline,p.status)?"#a32d2d":"#888"}}>{fd(p.deadline)}</span>
-              <span style={{background:"#e8e8e8",fontSize:9,padding:"1px 5px",borderRadius:3}}>{p.progress||0}%</span>
+              <span style={{background:"#e8e8e8",fontSize:9,padding:"1px 5px",borderRadius:3}}>{prog}%</span>
             </div>
           </div>
-        ))}
+        );})}
       </div>}
       {tAll.length>0&&<div>
         <div style={{fontWeight:600,fontSize:11,color:"#1a6bbf",marginBottom:4}}>Tâches :</div>
-        {tAll.map(t=>{
-          const prj=projects.find(p=>p.id===t.project_id);
-          return(
-            <div key={t.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 8px",background:t.status==="Terminé"?"#f3fbee":"#f7f9ff",borderRadius:5,marginBottom:3,fontSize:11}}>
-              <div><span style={{fontWeight:500}}>{t.name}</span>{prj&&<span style={{color:"#888",marginLeft:5,fontSize:10}}>({prj.name})</span>}</div>
-              <div style={{display:"flex",gap:5,flexShrink:0}}>
-                <span style={{background:SC[t.status]?.bg||"#eee",color:SC[t.status]?.tx||"#333",fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:3}}>{t.status}</span>
-                <span style={{fontSize:10,color:isOD(t.deadline,t.status)?"#a32d2d":"#888"}}>{fd(t.deadline)}</span>
-              </div>
+        {tAll.map(t=>{const prj=projects.find(p=>p.id===t.project_id);return(
+          <div key={t.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 8px",background:t.status==="Terminé"?"#f3fbee":"#f7f9ff",borderRadius:5,marginBottom:3,fontSize:11}}>
+            <div><span style={{fontWeight:500}}>{t.name}</span>{prj&&<span style={{color:"#888",marginLeft:5,fontSize:10}}>({prj.name})</span>}</div>
+            <div style={{display:"flex",gap:5,flexShrink:0}}>
+              <span style={{background:SC[t.status]?.bg||"#eee",color:SC[t.status]?.tx||"#333",fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:3}}>{t.status}</span>
+              <span style={{fontSize:10,color:isOD(t.deadline,t.status)?"#a32d2d":"#888"}}>{fd(t.deadline)}</span>
             </div>
-          );
-        })}
+          </div>
+        );})}
       </div>}
       {!pAll.length&&!tAll.length&&<p style={{fontSize:11,color:"#aaa",margin:0}}>Aucune activité sur cette période.</p>}
     </div>
@@ -458,7 +556,7 @@ function ReportModal({html,onClose}){
   if(print)return(
     <div style={{position:"fixed",inset:0,zIndex:999,background:"#fff",display:"flex",flexDirection:"column"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 16px",background:"#1a6bbf",flexShrink:0}}>
-        <span style={{fontWeight:700,fontSize:14,color:"#fff"}}>Rapport — Ctrl+P pour imprimer</span>
+        <span style={{fontWeight:700,fontSize:14,color:"#fff"}}>Ctrl+P → Enregistrer en PDF</span>
         <div style={{display:"flex",gap:8}}>
           <button onClick={()=>setPrint(false)} style={{padding:"5px 12px",fontSize:12,background:"#fff",color:"#1a6bbf",border:"none",borderRadius:6,cursor:"pointer",fontWeight:600}}>← Retour</button>
           <button onClick={onClose} style={{padding:"5px 12px",fontSize:12,background:"#e74c3c",color:"#fff",border:"none",borderRadius:6,cursor:"pointer",fontWeight:600}}>✕ Fermer</button>
@@ -478,7 +576,7 @@ function ReportModal({html,onClose}){
           </div>
         </div>
         <div style={{background:"#FFF8DC",borderBottom:"1px solid #f0e68c",padding:"7px 16px",fontSize:11,color:"#7a6000",flexShrink:0}}>
-          Clique sur <strong>Imprimer / PDF</strong> puis Ctrl+P pour enregistrer en PDF.
+          Clique sur <strong>Imprimer / PDF</strong> puis <strong>Ctrl+P</strong> pour enregistrer en PDF.
         </div>
         <iframe srcDoc={html} style={{flex:1,border:"none",borderRadius:"0 0 12px 12px",width:"100%"}} title="Aperçu"/>
       </div>
@@ -507,38 +605,49 @@ export default function App(){
   const [pilots,setPilots]=useState([]);
   const [loading,setLoading]=useState(true);
   const [view,setView]=useState("projects");
-  const [fSt,setFSt]=useState("");
-  const [fPil,setFPil]=useState("");
-  const [fSite,setFSite]=useState("");
-  const [fTPrj,setFTPrj]=useState("");
-  const [fTSt,setFTSt]=useState("");
-  const [fTSite,setFTSite]=useState("");
-  const [sortKey,setSortKey]=useState("");
-  const [sortDir,setSortDir]=useState("asc");
-  const [pModal,setPModal]=useState(null);
-  const [tModal,setTModal]=useState(null);
-  const [gantt,setGantt]=useState(false);
-  const [pilotsModal,setPilotsModal]=useState(false);
-  const [reportModal,setReportModal]=useState(false);
+  const [fSt,setFSt]=useState(""); const [fPil,setFPil]=useState(""); const [fSite,setFSite]=useState("");
+  const [fTPrj,setFTPrj]=useState(""); const [fTSt,setFTSt]=useState(""); const [fTSite,setFTSite]=useState("");
+  const [sortKey,setSortKey]=useState(""); const [sortDir,setSortDir]=useState("asc");
+  const [pModal,setPModal]=useState(null); const [tModal,setTModal]=useState(null);
+  const [gantt,setGantt]=useState(false); const [pilotsModal,setPilotsModal]=useState(false); const [reportModal,setReportModal]=useState(false);
 
   const fetchAll=useCallback(async()=>{
     setLoading(true);
     const [p,t,pl]=await Promise.all([sbGet("projects"),sbGet("tasks"),sbGet("pilots","*&order=position")]);
-    setProjects(Array.isArray(p)?p:[]);
-    setTasks(Array.isArray(t)?t:[]);
-    setPilots(Array.isArray(pl)?pl:[]);
+    setProjects(Array.isArray(p)?p:[]); setTasks(Array.isArray(t)?t:[]); setPilots(Array.isArray(pl)?pl:[]);
     setLoading(false);
   },[]);
-
   useEffect(()=>{fetchAll();},[fetchAll]);
 
   const EP={name:"",status:"En cours",priority:"Moyenne",deadline:"",progress:0,pilot:pilots[0]?.name||"",site:SITES[0],description:"",notes:"",weight:0,created_at:TODAY};
   const ET={project_id:projects[0]?.id,name:"",status:"En attente",priority:"Moyenne",pilot:pilots[0]?.name||"",site:SITES[0],deadline:"",notes:"",weight:0,created_at:TODAY};
 
-  async function saveP(f){const{id,...d}=f;if(pModal.mode==="edit")await sbUpd("projects",id,d);else await sbIns("projects",d);setPModal(null);fetchAll();}
-  async function saveT(f){const{id,...d}=f;d.project_id=Number(d.project_id||f.project_id);if(tModal.mode==="edit")await sbUpd("tasks",id,d);else await sbIns("tasks",d);setTModal(null);fetchAll();}
+  async function saveP(f){
+    const{id,...d}=f;
+    d.progress=calcProgress(f.id,tasks);
+    if(pModal.mode==="edit")await sbUpd("projects",id,d);else await sbIns("projects",d);
+    setPModal(null);fetchAll();
+  }
+  async function saveT(f){
+    const{id,...d}=f; d.project_id=Number(d.project_id||f.project_id);
+    if(tModal.mode==="edit")await sbUpd("tasks",id,d);else await sbIns("tasks",d);
+    // Recalcul avancement du projet parent
+    const pid=d.project_id;
+    setTModal(null);
+    await fetchAll();
+    // Mise à jour progress projet
+    const updTasks=await sbGet("tasks");
+    const prog=calcProgress(pid,Array.isArray(updTasks)?updTasks:[]);
+    await sbUpd("projects",pid,{progress:prog});
+    fetchAll();
+  }
   async function delP(id){if(!window.confirm("Supprimer ce projet et ses tâches ?"))return;await sbDel("projects",id);fetchAll();}
-  async function delT(id){await sbDel("tasks",id);fetchAll();}
+  async function delT(id){
+    const t=tasks.find(x=>x.id===id);
+    await sbDel("tasks",id);
+    if(t){const updTasks=tasks.filter(x=>x.id!==id);const prog=calcProgress(t.project_id,updTasks);await sbUpd("projects",t.project_id,{progress:prog});}
+    fetchAll();
+  }
 
   function toggleSort(k){if(sortKey===k)setSortDir(d=>d==="asc"?"desc":"asc");else{setSortKey(k);setSortDir("asc");}}
   function sortIcon(k){return sortKey!==k?"↕":sortDir==="asc"?"↑":"↓";}
@@ -548,7 +657,7 @@ export default function App(){
   const activeN=projects.filter(p=>p.status!=="Terminé").length;
   const odN=tasks.filter(t=>isOD(t.deadline,t.status)).length;
   const doneN=tasks.filter(t=>t.status==="Terminé").length;
-  const avgN=projects.length?Math.round(projects.reduce((s,p)=>s+(p.progress||0),0)/projects.length):0;
+  const avgN=projects.length?Math.round(projects.reduce((s,p)=>s+calcProgress(p.id,tasks),0)/projects.length):0;
 
   function buildReport(){
     const now=new Date();
@@ -562,21 +671,32 @@ export default function App(){
     const odT=tasks.filter(t=>isOD(t.deadline,t.status));
     const odB=odT.length?'<div style="margin-bottom:14px;border:1px solid #f09595;border-radius:7px;overflow:hidden"><div style="background:#FCEBEB;padding:7px 12px;font-weight:700;font-size:12px;color:#791F1F">Taches en retard ('+odT.length+')</div><table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="background:#fdf0f0"><th style="padding:4px 8px;text-align:left">Tache</th><th style="padding:4px 8px;text-align:left">Projet</th><th style="padding:4px 8px;text-align:left">Pilote</th><th style="padding:4px 8px;text-align:left">Echeance</th></tr></thead><tbody>'+odT.map(t=>{const prj=projects.find(p=>p.id===t.project_id);return'<tr><td style="padding:4px 8px">'+t.name+'</td><td style="padding:4px 8px">'+(prj?prj.name:"-")+'</td><td style="padding:4px 8px">'+t.pilot+'</td><td style="padding:4px 8px;color:#a32d2d;font-weight:700">'+fd(t.deadline)+'</td></tr>';}).join("")+'</tbody></table></div>':"";
     const rows=projects.map(p=>{
-      const pt=tasks.filter(t=>t.project_id===p.id),odP=isOD(p.deadline,p.status);
+      const pt=tasks.filter(t=>t.project_id===p.id);
+      const prog=calcProgress(p.id,tasks);
+      const odP=isOD(p.deadline,p.status);
       const tr=pt.length?'<table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="background:#f0f0f0"><th style="padding:4px 8px;text-align:left">Tache</th><th style="padding:4px 8px;text-align:left">Statut</th><th style="padding:4px 8px;text-align:left">Pilote</th><th style="padding:4px 8px;text-align:left">Echeance</th></tr></thead><tbody>'+pt.map(t=>{const tod=isOD(t.deadline,t.status);return'<tr style="border-bottom:1px solid #eee"><td style="padding:4px 8px">'+t.name+'</td><td style="padding:4px 8px">'+sb(t.status)+'</td><td style="padding:4px 8px">'+t.pilot+'</td><td style="padding:4px 8px'+(tod?";color:#a32d2d;font-weight:700":"")+'">'+(tod?"(!!) ":"")+fd(t.deadline)+'</td></tr>';}).join("")+'</tbody></table>'
         :'<p style="padding:6px 12px;font-size:11px;color:#999;margin:0">Aucune tache.</p>';
-      return'<div style="margin-bottom:12px;border:1px solid #d0d0d0;border-radius:7px;overflow:hidden;page-break-inside:avoid"><div style="background:#f8f8f8;padding:8px 12px;border-bottom:1px solid #d0d0d0"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:3px">'+sb(p.status)+" "+pb2(p.priority||"Moyenne")+' <span style="font-weight:700;font-size:13px">'+p.name+'</span><span style="font-size:10px;background:#eee;padding:2px 7px;border-radius:4px">'+(p.site||"")+'</span></div><div style="font-size:11px;color:#666">Pilote: '+p.pilot+' | Echeance: <span style="'+(odP?"color:#a32d2d;font-weight:700":"")+'">'+(odP?"(!!) ":"")+fd(p.deadline)+'</span> | Avancement: '+(p.progress||0)+'%</div>'+bar(p.progress)+(p.notes?'<div style="margin-top:4px;font-size:11px;color:#555;background:#fffbee;border:1px solid #f0e68c;border-radius:4px;padding:4px 8px">'+p.notes+'</div>':'')+'</div>'+tr+'</div>';
+      return'<div style="margin-bottom:12px;border:1px solid #d0d0d0;border-radius:7px;overflow:hidden;page-break-inside:avoid"><div style="background:#f8f8f8;padding:8px 12px;border-bottom:1px solid #d0d0d0"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:3px">'+sb(p.status)+" "+pb2(p.priority||"Moyenne")+' <span style="font-weight:700;font-size:13px">'+p.name+'</span></div><div style="font-size:11px;color:#666">Pilote: '+p.pilot+' | Echeance: <span style="'+(odP?"color:#a32d2d;font-weight:700":"")+'">'+(odP?"(!!) ":"")+fd(p.deadline)+'</span> | Avancement: '+prog+'% ('+pt.filter(t=>t.status==="Terminé").length+'/'+pt.length+' taches)</div>'+bar(prog)+(p.notes?'<div style="margin-top:4px;font-size:11px;color:#555;background:#fffbee;border:1px solid #f0e68c;border-radius:4px;padding:4px 8px">'+p.notes+'</div>':'')+'</div>'+tr+'</div>';
     }).join("");
-    return'<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Bilan S'+wn+'</title><style>body{font-family:Arial,sans-serif;font-size:12px;color:#222;padding:20px 24px;margin:0}.kg{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}.kc{background:#f5f5f5;border-radius:6px;padding:8px 10px}.kl{font-size:10px;color:#666;margin:0 0 2px}.kv{font-size:18px;font-weight:700;margin:0}h2{font-size:12px;font-weight:700;border-bottom:1px solid #ddd;padding-bottom:3px;margin:14px 0 8px}@media print{body{padding:0}}</style></head><body><div style="margin-bottom:12px"><div style="font-size:16px;font-weight:700">Bilan hebdomadaire - Physique Medicale</div><div style="font-size:10px;color:#666;margin-top:2px">Sites Galilee &amp; Bourgogne | Semaine '+wn+' | '+dl+'</div></div><div class="kg"><div class="kc"><p class="kl">Projets actifs</p><p class="kv">'+activeN+'</p></div><div class="kc"><p class="kl">Taches en retard</p><p class="kv" style="color:'+(odN>0?"#a32d2d":"#222")+'">'+odN+'</p></div><div class="kc"><p class="kl">Taches terminees</p><p class="kv">'+doneN+'</p></div><div class="kc"><p class="kl">Avancement moyen</p><p class="kv">'+avgN+'%</p></div></div>'+odB+'<h2>Detail des projets</h2>'+rows+'<p style="margin-top:16px;font-size:9px;color:#bbb;text-align:center">Genere le '+dl+' - Confidentiel interne</p></body></html>';
+    const {svg:ganttSvg}=buildGanttSVG(projects,tasks,760);
+    const chargeSvg=buildChargeSVG(projects,tasks,pilots,700);
+    return'<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Bilan S'+wn+'</title><style>body{font-family:Arial,sans-serif;font-size:12px;color:#222;padding:20px 24px;margin:0}.kg{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}.kc{background:#f5f5f5;border-radius:6px;padding:8px 10px}.kl{font-size:10px;color:#666;margin:0 0 2px}.kv{font-size:18px;font-weight:700;margin:0}h2{font-size:12px;font-weight:700;border-bottom:1px solid #ddd;padding-bottom:3px;margin:14px 0 8px}@media print{body{padding:0}h2{page-break-before:auto}}</style></head><body>'
+      +'<div style="margin-bottom:12px"><div style="font-size:16px;font-weight:700">Bilan hebdomadaire - Physique Medicale</div><div style="font-size:10px;color:#666;margin-top:2px">Sites Galilee &amp; Bourgogne | Semaine '+wn+' | '+dl+'</div></div>'
+      +'<div class="kg"><div class="kc"><p class="kl">Projets actifs</p><p class="kv">'+activeN+'</p></div><div class="kc"><p class="kl">Taches en retard</p><p class="kv" style="color:'+(odN>0?"#a32d2d":"#222")+'">'+odN+'</p></div><div class="kc"><p class="kl">Taches terminees</p><p class="kv">'+doneN+'</p></div><div class="kc"><p class="kl">Avancement moyen</p><p class="kv">'+avgN+'%</p></div></div>'
+      +odB
+      +'<h2>Diagramme de Gantt</h2><div style="overflow-x:auto;margin-bottom:14px">'+ganttSvg+'</div>'
+      +'<h2>Charge des pilotes sur 12 mois</h2><div style="margin-bottom:14px">'+chargeSvg+'</div>'
+      +'<h2>Detail des projets</h2>'+rows
+      +'<p style="margin-top:16px;font-size:9px;color:#bbb;text-align:center">Genere le '+dl+' - Confidentiel interne</p></body></html>';
   }
 
   if(loading)return <Spinner/>;
 
   return(
     <div style={{padding:"1rem 0",fontFamily:"Arial,sans-serif",color:"#111"}}>
-      {pModal&&<Modal title={pModal.mode==="edit"?"Modifier le projet":"Nouveau projet"} onClose={()=>setPModal(null)}><ProjForm data={pModal.data} pilots={pilots} onSave={saveP} onClose={()=>setPModal(null)}/></Modal>}
+      {pModal&&<Modal title={pModal.mode==="edit"?"Modifier le projet":"Nouveau projet"} onClose={()=>setPModal(null)}><ProjForm data={pModal.data} pilots={pilots} tasks={tasks} onSave={saveP} onClose={()=>setPModal(null)}/></Modal>}
       {tModal&&<Modal title={tModal.mode==="edit"?"Modifier la tâche":"Nouvelle tâche"} onClose={()=>setTModal(null)}><TaskForm data={tModal.data} projects={projects} pilots={pilots} onSave={saveT} onClose={()=>setTModal(null)}/></Modal>}
-      {gantt&&<Modal title="Diagramme de Gantt — cliquer sur ▶ pour voir les tâches" onClose={()=>setGantt(false)} wide><GanttView projects={projects} tasks={tasks}/><div style={{textAlign:"right",marginTop:12}}><button style={ss.btnS} onClick={()=>setGantt(false)}>Fermer</button></div></Modal>}
+      {gantt&&<Modal title="Gantt — cliquer ▶ pour voir les tâches" onClose={()=>setGantt(false)} wide><GanttView projects={projects} tasks={tasks}/><div style={{textAlign:"right",marginTop:12}}><button style={ss.btnS} onClick={()=>setGantt(false)}>Fermer</button></div></Modal>}
       {pilotsModal&&<Modal title="Gérer les pilotes" onClose={()=>setPilotsModal(false)}><PilotsForm pilots={pilots} onClose={()=>setPilotsModal(false)} onRefresh={fetchAll}/></Modal>}
       {reportModal&&<ReportModal html={buildReport()} onClose={()=>setReportModal(false)}/>}
 
@@ -612,26 +732,10 @@ export default function App(){
 
       {view!=="stats"&&<>
         <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap",alignItems:"center"}}>
-          <select style={ss.sel} value={fSt} onChange={e=>setFSt(e.target.value)}>
-            <option value="">Tous les statuts</option>{STATUSES.map(s=><option key={s}>{s}</option>)}
-          </select>
-          <select style={ss.sel} value={fPil} onChange={e=>setFPil(e.target.value)}>
-            <option value="">Tous les pilotes</option>{pilots.map(p=><option key={p.id}>{p.name}</option>)}
-          </select>
-          {view==="projects"&&<select style={ss.sel} value={fSite} onChange={e=>setFSite(e.target.value)}>
-            <option value="">Tous les sites</option>{SITES.map(s=><option key={s}>{s}</option>)}
-          </select>}
-          {view==="tasks"&&<>
-            <select style={ss.sel} value={fTPrj} onChange={e=>setFTPrj(e.target.value)}>
-              <option value="">Tous les projets</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-            <select style={ss.sel} value={fTSt} onChange={e=>setFTSt(e.target.value)}>
-              <option value="">Tous les statuts</option>{STATUSES.map(s=><option key={s}>{s}</option>)}
-            </select>
-            <select style={ss.sel} value={fTSite} onChange={e=>setFTSite(e.target.value)}>
-              <option value="">Tous les sites</option>{SITES.map(s=><option key={s}>{s}</option>)}
-            </select>
-          </>}
+          <select style={ss.sel} value={fSt} onChange={e=>setFSt(e.target.value)}><option value="">Tous les statuts</option>{STATUSES.map(s=><option key={s}>{s}</option>)}</select>
+          <select style={ss.sel} value={fPil} onChange={e=>setFPil(e.target.value)}><option value="">Tous les pilotes</option>{pilots.map(p=><option key={p.id}>{p.name}</option>)}</select>
+          {view==="projects"&&<select style={ss.sel} value={fSite} onChange={e=>setFSite(e.target.value)}><option value="">Tous les sites</option>{SITES.map(s=><option key={s}>{s}</option>)}</select>}
+          {view==="tasks"&&<><select style={ss.sel} value={fTPrj} onChange={e=>setFTPrj(e.target.value)}><option value="">Tous les projets</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select><select style={ss.sel} value={fTSt} onChange={e=>setFTSt(e.target.value)}><option value="">Tous les statuts</option>{STATUSES.map(s=><option key={s}>{s}</option>)}</select><select style={ss.sel} value={fTSite} onChange={e=>setFTSite(e.target.value)}><option value="">Tous les sites</option>{SITES.map(s=><option key={s}>{s}</option>)}</select></>}
           <div style={{marginLeft:"auto"}}>
             {view==="projects"&&<button style={ss.btnP} onClick={()=>setPModal({mode:"add",data:{...EP,pilot:pilots[0]?.name||""}})}>+ Nouveau projet</button>}
             {view==="tasks"&&<button style={ss.btnP} onClick={()=>setTModal({mode:"add",data:{...ET,pilot:pilots[0]?.name||"",project_id:projects[0]?.id}})}>+ Nouvelle tâche</button>}
@@ -640,9 +744,7 @@ export default function App(){
         <div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
           <span style={{fontSize:11,color:"#666"}}>Trier :</span>
           {[{k:"priority",l:"Priorité"},{k:"deadline",l:"Échéance"},{k:"progress",l:"Avancement"},{k:"status",l:"Statut"}].map(({k,l})=>(
-            <button key={k} onClick={()=>toggleSort(k)} style={{...ss.btnS,fontSize:11,padding:"3px 9px",background:sortKey===k?"#e8f0fb":"#f0f0f0",color:sortKey===k?"#1a6bbf":"#333",fontWeight:sortKey===k?700:400}}>
-              {l} {sortIcon(k)}
-            </button>
+            <button key={k} onClick={()=>toggleSort(k)} style={{...ss.btnS,fontSize:11,padding:"3px 9px",background:sortKey===k?"#e8f0fb":"#f0f0f0",color:sortKey===k?"#1a6bbf":"#333",fontWeight:sortKey===k?700:400}}>{l} {sortIcon(k)}</button>
           ))}
           {sortKey&&<button onClick={()=>setSortKey("")} style={{...ss.btnD,fontSize:11,padding:"3px 9px"}}>✕</button>}
         </div>
@@ -651,7 +753,10 @@ export default function App(){
       {view==="projects"&&<div>
         {fp.length===0&&<p style={{color:"#888",fontSize:13}}>Aucun projet.</p>}
         {fp.map(p=>{
-          const tc=tasks.filter(t=>t.project_id===p.id).length,od=isOD(p.deadline,p.status);
+          const tc=tasks.filter(t=>t.project_id===p.id).length;
+          const prog=calcProgress(p.id,tasks);
+          const od=isOD(p.deadline,p.status);
+          const done=tasks.filter(t=>t.project_id===p.id&&t.status==="Terminé").length;
           return(
             <div key={p.id} style={{background:"#fff",border:"1px solid #e0e0e0",borderRadius:10,padding:"11px 13px",marginBottom:9}}>
               <div style={{display:"flex",alignItems:"flex-start",gap:8,flexWrap:"wrap",marginBottom:5}}>
@@ -666,11 +771,11 @@ export default function App(){
                 <span>Pilote : {p.pilot}</span>
                 {p.deadline&&<span style={{color:od?"#a32d2d":"#666"}}>Échéance : {fd(p.deadline)}{od?" (!!)":""}</span>}
                 <span style={{color:"#bbb"}}>Ajouté : {fd(p.created_at)}</span>
-                <span>{tc} tâche{tc>1?"s":""}</span>
+                <span>{done}/{tc} tâche{tc>1?"s":""} terminée{done>1?"s":""}</span>
                 {(p.weight||0)>0&&<span style={{background:"#f0f0f0",borderRadius:4,padding:"1px 7px",color:"#555",fontWeight:600}}>⏱ {p.weight}%</span>}
               </div>
               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:9}}>
-                <PBar v={p.progress||0}/><span style={{fontSize:11,color:"#666",minWidth:32}}>{p.progress||0}%</span>
+                <PBar v={prog}/><span style={{fontSize:11,color:"#666",minWidth:32}}>{prog}%</span>
               </div>
               <div style={{display:"flex",gap:6}}>
                 <button style={ss.btnS} onClick={()=>setPModal({mode:"edit",data:{...p}})}>Modifier</button>
@@ -713,6 +818,4 @@ export default function App(){
     </div>
   );
 }
-
-
     
