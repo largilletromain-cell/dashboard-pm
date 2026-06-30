@@ -30,6 +30,34 @@ function calcProgress(projectId, tasks){
   return Math.round((done/pt.length)*100);
 }
 
+// Fraction de chevauchement entre [start,end] de la tâche et [pStart,pEnd] de la période, en jours
+function overlapDays(start,end,pStart,pEnd){
+  const s=Math.max(new Date(start).getTime(), new Date(pStart).getTime());
+  const e=Math.min(new Date(end).getTime(), new Date(pEnd).getTime());
+  return Math.max(0,(e-s)/86400000);
+}
+
+// Charge d'une tâche dans une période : ((échéance-début)*pondération)/durée période, pondérée par le chevauchement réel
+function taskLoadInPeriod(task, pStart, pEnd){
+  if(!task.created_at || !task.deadline) return 0;
+  const tStart=new Date(task.created_at), tEnd=new Date(task.deadline);
+  const periodDays=(new Date(pEnd)-new Date(pStart))/86400000;
+  if(periodDays<=0) return 0;
+  const ov=overlapDays(tStart,tEnd,pStart,pEnd);
+  if(ov<=0) return 0;
+  const w=(task.weight||0)/100;
+  return (ov*w/periodDays)*100; // en %
+}
+
+// Retard d'une tâche : (date_fin_effective - échéance) / (échéance - début)
+function taskDelay(task){
+  if(!task.completion_date || !task.deadline || !task.created_at) return null;
+  const start=new Date(task.created_at), due=new Date(task.deadline), done=new Date(task.completion_date);
+  const denom=(due-start)/86400000;
+  if(denom<=0) return null;
+  return ((done-due)/86400000)/denom;
+}
+
 const ss={
   inp:{width:"100%",padding:"6px 9px",fontSize:12,border:"1px solid #ccc",borderRadius:6,background:"#fff",color:"#111",boxSizing:"border-box"},
   lbl:{fontSize:11,color:"#555",display:"block",marginBottom:3},
@@ -76,9 +104,8 @@ function ProjForm({data,pilots,tasks,onSave,onClose}){
         </div>
         <div style={{fontSize:10,color:"#888",marginTop:4}}>{tasks.filter(t=>t.project_id===f.id&&t.status==="Terminé").length} / {tasks.filter(t=>t.project_id===f.id).length} tâches terminées</div>
       </div>
-      <div style={{gridColumn:"1/-1"}}><label style={ss.lbl}>Pondération temps : {f.weight||0}%</label><input type="range" min={0} max={100} step={5} value={f.weight||0} onChange={e=>setF(x=>({...x,weight:Number(e.target.value)}))} style={{width:"100%"}}/></div>
       <div><label style={ss.lbl}>Échéance</label><input type="date" style={ss.inp} value={f.deadline||""} onChange={set("deadline")}/></div>
-      <div><label style={ss.lbl}>Date d'ajout</label><input type="date" style={ss.inp} value={f.created_at||TODAY} onChange={set("created_at")}/></div>
+      <div><label style={ss.lbl}>Date de début</label><input type="date" style={ss.inp} value={f.created_at||TODAY} onChange={set("created_at")}/></div>
       <div style={{gridColumn:"1/-1"}}><label style={ss.lbl}>Description</label><input style={ss.inp} value={f.description||""} onChange={set("description")}/></div>
       <div style={{gridColumn:"1/-1"}}><label style={ss.lbl}>Notes</label><textarea style={{...ss.inp,height:72,resize:"vertical"}} value={f.notes||""} onChange={set("notes")}/></div>
       <div style={{gridColumn:"1/-1",display:"flex",gap:8,marginTop:4}}>
@@ -95,14 +122,21 @@ function TaskForm({data,projects,pilots,onSave,onClose}){
   return(
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
       <div style={{gridColumn:"1/-1"}}><label style={ss.lbl}>Nom *</label><input style={ss.inp} value={f.name||""} onChange={set("name")} placeholder="Nom de la tâche"/></div>
-      <div><label style={ss.lbl}>Projet</label><select style={ss.inp} value={f.project_id||projects[0]?.id} onChange={e=>setF(x=>({...x,project_id:Number(e.target.value)}))}>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
+      <div style={{gridColumn:"1/-1"}}>
+        <label style={ss.lbl}>Projet (optionnel)</label>
+        <select style={ss.inp} value={f.project_id||""} onChange={e=>setF(x=>({...x,project_id:e.target.value?Number(e.target.value):null}))}>
+          <option value="">— Tâche indépendante (aucun projet) —</option>
+          {projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      </div>
       <div><label style={ss.lbl}>Statut</label><select style={ss.inp} value={f.status||"En attente"} onChange={set("status")}>{STATUSES.map(s=><option key={s}>{s}</option>)}</select></div>
       <div><label style={ss.lbl}>Priorité</label><select style={ss.inp} value={f.priority||"Moyenne"} onChange={set("priority")}>{PRIORITIES.map(s=><option key={s}>{s}</option>)}</select></div>
       <div><label style={ss.lbl}>Pilote</label><select style={ss.inp} value={f.pilot||""} onChange={set("pilot")}>{pilots.map(s=><option key={s.id}>{s.name}</option>)}</select></div>
       <div><label style={ss.lbl}>Site</label><select style={ss.inp} value={f.site||SITES[0]} onChange={set("site")}>{SITES.map(s=><option key={s}>{s}</option>)}</select></div>
       <div style={{gridColumn:"1/-1"}}><label style={ss.lbl}>Pondération temps : {f.weight||0}%</label><input type="range" min={0} max={100} step={5} value={f.weight||0} onChange={e=>setF(x=>({...x,weight:Number(e.target.value)}))} style={{width:"100%"}}/></div>
+      <div><label style={ss.lbl}>Date de début</label><input type="date" style={ss.inp} value={f.created_at||TODAY} onChange={set("created_at")}/></div>
       <div><label style={ss.lbl}>Échéance</label><input type="date" style={ss.inp} value={f.deadline||""} onChange={set("deadline")}/></div>
-      <div><label style={ss.lbl}>Date d'ajout</label><input type="date" style={ss.inp} value={f.created_at||TODAY} onChange={set("created_at")}/></div>
+      <div style={{gridColumn:"1/-1"}}><label style={ss.lbl}>Date de fin effective {f.status!=="Terminé"&&<span style={{color:"#aaa",fontWeight:400}}>(renseignée à la clôture)</span>}</label><input type="date" style={ss.inp} value={f.completion_date||""} onChange={set("completion_date")}/></div>
       <div style={{gridColumn:"1/-1"}}><label style={ss.lbl}>Notes</label><textarea style={{...ss.inp,height:60,resize:"vertical"}} value={f.notes||""} onChange={set("notes")}/></div>
       <div style={{gridColumn:"1/-1",display:"flex",gap:8,marginTop:4}}>
         <button style={ss.btnP} onClick={()=>(f.name||"").trim()&&onSave(f)}>Enregistrer</button>
@@ -469,7 +503,43 @@ function WorkloadTable({projects,tasks,pilots}){
   );
 }
 
+function PieChart({inProgress,completed,size=130}){
+  const free=Math.max(0,100-inProgress-completed);
+  const r=size/2-8, cx=size/2, cy=size/2;
+  const segs=[
+    {v:inProgress,color:"#378ADD",label:"En cours"},
+    {v:completed,color:"#639922",label:"Terminé"},
+    {v:free,color:"#e8e8e8",label:"Disponible"},
+  ];
+  let acc=0;
+  const paths=segs.map((s,i)=>{
+    if(s.v<=0)return null;
+    const startAngle=(acc/100)*2*Math.PI - Math.PI/2;
+    acc+=s.v;
+    const endAngle=(acc/100)*2*Math.PI - Math.PI/2;
+    const x1=cx+r*Math.cos(startAngle), y1=cy+r*Math.sin(startAngle);
+    const x2=cx+r*Math.cos(endAngle), y2=cy+r*Math.sin(endAngle);
+    const large=(s.v/100)>0.5?1:0;
+    if(s.v>=99.99){
+      return <circle key={i} cx={cx} cy={cy} r={r} fill={s.color}/>;
+    }
+    const d=`M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${large} 1 ${x2},${y2} Z`;
+    return <path key={i} d={d} fill={s.color} stroke="#fff" strokeWidth="1.5"/>;
+  });
+  return(
+    <div style={{display:"flex",alignItems:"center",gap:14}}>
+      <svg width={size} height={size}>{paths}<circle cx={cx} cy={cy} r={r*0.5} fill="#fff"/><text x={cx} y={cy+4} fontSize="13" fontWeight="bold" textAnchor="middle" fill="#333">{Math.round(inProgress+completed)}%</text></svg>
+      <div style={{fontSize:11}}>
+        <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:4}}><span style={{width:10,height:10,borderRadius:"50%",background:"#378ADD",display:"inline-block"}}/>En cours : <b>{inProgress.toFixed(1)}%</b></div>
+        <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:4}}><span style={{width:10,height:10,borderRadius:"50%",background:"#639922",display:"inline-block"}}/>Terminé : <b>{completed.toFixed(1)}%</b></div>
+        <div style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:"50%",background:"#e8e8e8",display:"inline-block",border:"1px solid #ddd"}}/>Disponible : <b>{free.toFixed(1)}%</b></div>
+      </div>
+    </div>
+  );
+}
+
 function PilotCard({pilot,projects,tasks,dateFrom,dateTo}){
+  const pStart=dateFrom||TODAY, pEnd=dateTo||TODAY;
   function inRange(item){
     if(!dateFrom&&!dateTo)return true;
     const raw=item.deadline||item.created_at; if(!raw)return true;
@@ -480,12 +550,44 @@ function PilotCard({pilot,projects,tasks,dateFrom,dateTo}){
   }
   const pAll=projects.filter(p=>p.pilot===pilot&&inRange(p));
   const tAll=tasks.filter(t=>t.pilot===pilot&&inRange(t));
+  const myTasks=tasks.filter(t=>t.pilot===pilot);
+
+  // Charge camembert
+  const inProgLoad=myTasks.filter(t=>t.status!=="Terminé").reduce((s,t)=>s+taskLoadInPeriod(t,pStart,pEnd),0);
+  const doneLoad=myTasks.filter(t=>t.status==="Terminé").reduce((s,t)=>s+taskLoadInPeriod(t,pStart,pEnd),0);
+
+  // Retard moyen
+  const delays=myTasks
+    .filter(t=>t.status==="Terminé"&&t.completion_date)
+    .filter(t=>{const raw=t.deadline||t.created_at;if(!raw)return true;const d=new Date(raw);if(dateFrom&&d<new Date(dateFrom))return false;if(dateTo&&d>new Date(dateTo))return false;return true;})
+    .map(t=>taskDelay(t))
+    .filter(v=>v!==null);
+  const avgDelay = delays.length ? delays.reduce((s,v)=>s+v,0)/delays.length : null;
+  const delayColor = avgDelay===null ? "#888" : avgDelay<=0 ? "#27500A" : avgDelay<0.2 ? "#BA7517" : "#a32d2d";
+  const delayLabel = avgDelay===null ? "Pas de donnée" : avgDelay<=0 ? "En avance / à l'heure" : "En retard";
+
   return(
     <div style={{background:"#fff",border:"1px solid #e0e0e0",borderRadius:10,padding:"12px 14px",marginBottom:12}}>
       <div style={{fontWeight:700,fontSize:14,marginBottom:10,paddingBottom:6,borderBottom:"2px solid #1a6bbf",display:"flex",alignItems:"center",gap:8}}>
         <span style={{background:"#1a6bbf",color:"#fff",borderRadius:"50%",width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,flexShrink:0}}>{pilot[0]}</span>
         {pilot}
       </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:12}}>
+        <div style={{background:"#f8faff",borderRadius:8,padding:"10px 12px"}}>
+          <div style={{fontSize:11,fontWeight:600,color:"#1a6bbf",marginBottom:8}}>Charge sur la période</div>
+          <PieChart inProgress={inProgLoad} completed={doneLoad}/>
+        </div>
+        <div style={{background:"#f8faff",borderRadius:8,padding:"10px 12px",display:"flex",flexDirection:"column",justifyContent:"center"}}>
+          <div style={{fontSize:11,fontWeight:600,color:"#1a6bbf",marginBottom:8}}>Indicateur de respect des délais</div>
+          <div style={{fontSize:26,fontWeight:700,color:delayColor,marginBottom:2}}>
+            {avgDelay===null?"—":(avgDelay>0?"+":"")+(avgDelay*100).toFixed(0)+"%"}
+          </div>
+          <div style={{fontSize:11,color:delayColor,fontWeight:600}}>{delayLabel}</div>
+          <div style={{fontSize:10,color:"#999",marginTop:4}}>{delays.length} tâche{delays.length>1?"s":""} terminée{delays.length>1?"s":""} avec date de fin renseignée</div>
+        </div>
+      </div>
+
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:10}}>
         {[{l:"Projets en cours",v:pAll.filter(p=>p.status!=="Terminé").length,blue:true},{l:"Projets terminés",v:pAll.filter(p=>p.status==="Terminé").length},{l:"Tâches en cours",v:tAll.filter(t=>t.status!=="Terminé").length,blue:true},{l:"Tâches terminées",v:tAll.filter(t=>t.status==="Terminé").length}].map(k=>(
           <div key={k.l} style={{background:k.blue?"#f0f6ff":"#eaf3de",borderRadius:7,padding:"8px 10px",textAlign:"center"}}>
@@ -511,7 +613,7 @@ function PilotCard({pilot,projects,tasks,dateFrom,dateTo}){
         <div style={{fontWeight:600,fontSize:11,color:"#1a6bbf",marginBottom:4}}>Tâches :</div>
         {tAll.map(t=>{const prj=projects.find(p=>p.id===t.project_id);return(
           <div key={t.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 8px",background:t.status==="Terminé"?"#f3fbee":"#f7f9ff",borderRadius:5,marginBottom:3,fontSize:11}}>
-            <div><span style={{fontWeight:500}}>{t.name}</span>{prj&&<span style={{color:"#888",marginLeft:5,fontSize:10}}>({prj.name})</span>}</div>
+            <div><span style={{fontWeight:500}}>{t.name}</span>{prj?<span style={{color:"#888",marginLeft:5,fontSize:10}}>({prj.name})</span>:<span style={{color:"#bbb",marginLeft:5,fontSize:10}}>(indépendante)</span>}</div>
             <div style={{display:"flex",gap:5,flexShrink:0}}>
               <span style={{background:SC[t.status]?.bg||"#eee",color:SC[t.status]?.tx||"#333",fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:3}}>{t.status}</span>
               <span style={{fontSize:10,color:isOD(t.deadline,t.status)?"#a32d2d":"#888"}}>{fd(t.deadline)}</span>
@@ -586,6 +688,14 @@ function ReportModal({html,onClose}){
 
 function applySort(items,key,dir){
   if(!key)return items;
+  if(key==="site"){
+    return [...items].sort((a,b)=>{
+      const va=a.site||"",vb=b.site||"";
+      if(va<vb)return dir==="asc"?-1:1;
+      if(va>vb)return dir==="asc"?1:-1;
+      return (a.name||"").localeCompare(b.name||"");
+    });
+  }
   return [...items].sort((a,b)=>{
     let va,vb;
     if(key==="priority"){va=PRIOR_ORDER[a.priority]??9;vb=PRIOR_ORDER[b.priority]??9;}
@@ -620,7 +730,7 @@ export default function App(){
   useEffect(()=>{fetchAll();},[fetchAll]);
 
   const EP={name:"",status:"En cours",priority:"Moyenne",deadline:"",progress:0,pilot:pilots[0]?.name||"",site:SITES[0],description:"",notes:"",weight:0,created_at:TODAY};
-  const ET={project_id:projects[0]?.id,name:"",status:"En attente",priority:"Moyenne",pilot:pilots[0]?.name||"",site:SITES[0],deadline:"",notes:"",weight:0,created_at:TODAY};
+  const ET={project_id:null,name:"",status:"En attente",priority:"Moyenne",pilot:pilots[0]?.name||"",site:SITES[0],deadline:"",notes:"",weight:0,created_at:TODAY,completion_date:""};
 
   async function saveP(f){
     const{id,...d}=f;
@@ -629,23 +739,23 @@ export default function App(){
     setPModal(null);fetchAll();
   }
   async function saveT(f){
-    const{id,...d}=f; d.project_id=Number(d.project_id||f.project_id);
+    const{id,...d}=f; d.project_id=d.project_id?Number(d.project_id):null;
     if(tModal.mode==="edit")await sbUpd("tasks",id,d);else await sbIns("tasks",d);
-    // Recalcul avancement du projet parent
     const pid=d.project_id;
     setTModal(null);
     await fetchAll();
-    // Mise à jour progress projet
-    const updTasks=await sbGet("tasks");
-    const prog=calcProgress(pid,Array.isArray(updTasks)?updTasks:[]);
-    await sbUpd("projects",pid,{progress:prog});
-    fetchAll();
+    if(pid){
+      const updTasks=await sbGet("tasks");
+      const prog=calcProgress(pid,Array.isArray(updTasks)?updTasks:[]);
+      await sbUpd("projects",pid,{progress:prog});
+      fetchAll();
+    }
   }
   async function delP(id){if(!window.confirm("Supprimer ce projet et ses tâches ?"))return;await sbDel("projects",id);fetchAll();}
   async function delT(id){
     const t=tasks.find(x=>x.id===id);
     await sbDel("tasks",id);
-    if(t){const updTasks=tasks.filter(x=>x.id!==id);const prog=calcProgress(t.project_id,updTasks);await sbUpd("projects",t.project_id,{progress:prog});}
+    if(t&&t.project_id){const updTasks=tasks.filter(x=>x.id!==id);const prog=calcProgress(t.project_id,updTasks);await sbUpd("projects",t.project_id,{progress:prog});}
     fetchAll();
   }
 
@@ -787,7 +897,7 @@ export default function App(){
           {view==="tasks"&&<><select style={ss.sel} value={fTPrj} onChange={e=>setFTPrj(e.target.value)}><option value="">Tous les projets</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select><select style={ss.sel} value={fTSt} onChange={e=>setFTSt(e.target.value)}><option value="">Tous les statuts</option>{STATUSES.map(s=><option key={s}>{s}</option>)}</select><select style={ss.sel} value={fTSite} onChange={e=>setFTSite(e.target.value)}><option value="">Tous les sites</option>{SITES.map(s=><option key={s}>{s}</option>)}</select></>}
           <div style={{marginLeft:"auto"}}>
             {view==="projects"&&<button style={ss.btnP} onClick={()=>setPModal({mode:"add",data:{...EP,pilot:pilots[0]?.name||""}})}>+ Nouveau projet</button>}
-            {view==="tasks"&&<button style={ss.btnP} onClick={()=>setTModal({mode:"add",data:{...ET,pilot:pilots[0]?.name||"",project_id:projects[0]?.id}})}>+ Nouvelle tâche</button>}
+            {view==="tasks"&&<button style={ss.btnP} onClick={()=>setTModal({mode:"add",data:{...ET,pilot:pilots[0]?.name||""}})}>+ Nouvelle tâche</button>}
           </div>
         </div>
         <div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
@@ -795,6 +905,7 @@ export default function App(){
           {[{k:"priority",l:"Priorité"},{k:"deadline",l:"Échéance"},{k:"progress",l:"Avancement"},{k:"status",l:"Statut"}].map(({k,l})=>(
             <button key={k} onClick={()=>toggleSort(k)} style={{...ss.btnS,fontSize:11,padding:"3px 9px",background:sortKey===k?"#e8f0fb":"#f0f0f0",color:sortKey===k?"#1a6bbf":"#333",fontWeight:sortKey===k?700:400}}>{l} {sortIcon(k)}</button>
           ))}
+          {view==="projects"&&<button onClick={()=>toggleSort("site")} style={{...ss.btnS,fontSize:11,padding:"3px 9px",background:sortKey==="site"?"#e8f0fb":"#f0f0f0",color:sortKey==="site"?"#1a6bbf":"#333",fontWeight:sortKey==="site"?700:400}}>Site {sortIcon("site")}</button>}
           {sortKey&&<button onClick={()=>setSortKey("")} style={{...ss.btnD,fontSize:11,padding:"3px 9px"}}>✕</button>}
         </div>
       </>}
@@ -821,7 +932,6 @@ export default function App(){
                 {p.deadline&&<span style={{color:od?"#a32d2d":"#666"}}>Échéance : {fd(p.deadline)}{od?" (!!)":""}</span>}
                 <span style={{color:"#bbb"}}>Ajouté : {fd(p.created_at)}</span>
                 <span>{done}/{tc} tâche{tc>1?"s":""} terminée{done>1?"s":""}</span>
-                {(p.weight||0)>0&&<span style={{background:"#f0f0f0",borderRadius:4,padding:"1px 7px",color:"#555",fontWeight:600}}>⏱ {p.weight}%</span>}
               </div>
               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:9}}>
                 <PBar v={prog}/><span style={{fontSize:11,color:"#666",minWidth:32}}>{prog}%</span>
@@ -845,14 +955,15 @@ export default function App(){
               <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:t.notes?6:0}}>
                 <div style={{flex:1,minWidth:140}}>
                   <div style={{fontWeight:700,fontSize:12}}>{t.name}</div>
-                  <div style={{fontSize:10,color:"#888"}}>{prj?prj.name:"-"}</div>
+                  <div style={{fontSize:10,color:"#888"}}>{prj?prj.name:"— Indépendante —"}</div>
                 </div>
                 <Badge label={t.status} c={SC[t.status]||{bg:"#eee",tx:"#333"}}/>
                 {t.priority&&<Badge label={t.priority} c={PC[t.priority]||{bg:"#eee",tx:"#555"}}/>}
                 {t.site&&<Badge label={t.site} c={SIC[t.site]||{bg:"#eee",tx:"#555"}}/>}
                 <span style={{fontSize:11,color:"#666"}}>Pilote : {t.pilot}</span>
-                {t.deadline&&<span style={{fontSize:11,color:od?"#a32d2d":"#666"}}>{fd(t.deadline)}{od?" (!!)":""}</span>}
-                <span style={{fontSize:10,color:"#bbb"}}>{fd(t.created_at)}</span>
+                {t.deadline&&<span style={{fontSize:11,color:od?"#a32d2d":"#666"}}>Éch. {fd(t.deadline)}{od?" (!!)":""}</span>}
+                {t.completion_date&&<span style={{fontSize:11,color:"#27500A"}}>Fin réelle : {fd(t.completion_date)}</span>}
+                <span style={{fontSize:10,color:"#bbb"}}>Début : {fd(t.created_at)}</span>
                 {(t.weight||0)>0&&<span style={{background:"#f0f0f0",borderRadius:4,padding:"1px 7px",fontSize:10,color:"#555",fontWeight:600}}>⏱ {t.weight}%</span>}
                 <div style={{display:"flex",gap:6,marginLeft:"auto"}}>
                   <button style={ss.btnS} onClick={()=>setTModal({mode:"edit",data:{...t}})}>Modifier</button>
