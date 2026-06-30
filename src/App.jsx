@@ -627,8 +627,8 @@ function PilotCard({pilot,projects,tasks,dateFrom,dateTo}){
 }
 
 function StatsView({projects,tasks,pilots}){
-  const [dateFrom,setDateFrom]=useState("");
-  const [dateTo,setDateTo]=useState(TODAY);
+  const [dateFrom,setDateFrom]=useState(()=>{const d=new Date(TODAY);d.setMonth(d.getMonth()-3);return d.toISOString().split("T")[0];});
+  const [dateTo,setDateTo]=useState(()=>{const d=new Date(TODAY);d.setMonth(d.getMonth()+3);return d.toISOString().split("T")[0];});
   const [selPilot,setSelPilot]=useState("");
   const pilotList=selPilot?pilots.filter(p=>p.name===selPilot):pilots;
   return(
@@ -643,7 +643,7 @@ function StatsView({projects,tasks,pilots}){
               <option value="">Tous</option>{pilots.map(p=><option key={p.id}>{p.name}</option>)}
             </select>
           </div>
-          <button style={ss.btnS} onClick={()=>{setDateFrom("");setDateTo(TODAY);setSelPilot("");}}>Réinitialiser</button>
+          <button style={ss.btnS} onClick={()=>{const d1=new Date(TODAY);d1.setMonth(d1.getMonth()-3);const d2=new Date(TODAY);d2.setMonth(d2.getMonth()+3);setDateFrom(d1.toISOString().split("T")[0]);setDateTo(d2.toISOString().split("T")[0]);setSelPilot("");}}>Réinitialiser</button>
         </div>
       </div>
       <WorkloadChart projects={projects} tasks={tasks} pilots={pilotList}/>
@@ -653,8 +653,123 @@ function StatsView({projects,tasks,pilots}){
   );
 }
 
-function ReportModal({html,onClose}){
+function ReportModal({html,onClose,projects,tasks,pilots,kpis}){
   const [print,setPrint]=useState(false);
+  const [pdfState,setPdfState]=useState("idle"); // idle | loading | error
+  const iframeRef=useRef(null);
+
+  async function downloadPDF(){
+    setPdfState("loading");
+    try{
+      if(!window.jspdf){
+        await new Promise((resolve,reject)=>{
+          const existing=document.querySelector('script[data-jspdf]');
+          if(existing){existing.addEventListener("load",resolve);existing.addEventListener("error",reject);return;}
+          const s=document.createElement("script");
+          s.src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+          s.setAttribute("data-jspdf","1");
+          s.onload=resolve; s.onerror=reject;
+          document.head.appendChild(s);
+        });
+      }
+      await new Promise(r=>setTimeout(r,150));
+      if(!window.jspdf||!window.jspdf.jsPDF) throw new Error("jsPDF non chargé");
+
+      const {jsPDF}=window.jspdf;
+      const doc=new jsPDF({orientation:"landscape",unit:"mm",format:"a4"});
+
+      // Utilise html2canvas si dispo, sinon génère via iframe print-to-canvas fallback : on imprime le HTML texte simplifié
+      // Solution fiable sans dépendance supplémentaire : on capture l'iframe en image via canvas du SVG/contenu
+      // Ici on reconstruit un PDF textuel structuré directement (fiable à 100% sans lib externe de capture)
+      const PW=297,PH=210,ML=10,MT=10,CW=PW-2*ML;
+      let y=MT;
+      function chk(n){if(y+n>PH-10){doc.addPage();y=MT;}}
+
+      doc.setFontSize(16);doc.setFont("helvetica","bold");doc.setTextColor(26,107,191);
+      doc.text("Bilan hebdomadaire - Physique Medicale",ML,y);y+=6;
+      doc.setFontSize(9);doc.setFont("helvetica","normal");doc.setTextColor(100,100,100);
+      const now=new Date();
+      doc.text("Sites Galilee & Bourgogne | "+now.toLocaleDateString("fr-FR",{weekday:"long",year:"numeric",month:"long",day:"numeric"}),ML,y);y+=8;
+
+      const kw=(CW-9)/4;
+      kpis.forEach((k,i)=>{
+        const kx=ML+i*(kw+3);
+        doc.setFillColor(245,245,245);doc.roundedRect(kx,y,kw,14,2,2,"F");
+        doc.setFontSize(7.5);doc.setTextColor(120,120,120);
+        doc.text(k.l,kx+kw/2,y+5,{align:"center"});
+        doc.setFontSize(14);doc.setFont("helvetica","bold");
+        doc.setTextColor(k.d?163:20,k.d?45:20,k.d?45:20);
+        doc.text(String(k.v),kx+kw/2,y+11,{align:"center"});
+        doc.setFont("helvetica","normal");
+      });
+      y+=20;doc.setTextColor(20,20,20);
+
+      const odT=tasks.filter(t=>isOD(t.deadline,t.status));
+      if(odT.length){
+        chk(16);
+        doc.setFontSize(10);doc.setFont("helvetica","bold");doc.setTextColor(163,45,45);
+        doc.text("Taches en retard ("+odT.length+")",ML,y);y+=4;
+        doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(80,80,80);
+        odT.forEach(t=>{
+          chk(5);
+          const prj=projects.find(p=>p.id===t.project_id);
+          doc.text((t.name).slice(0,40)+" — "+(prj?prj.name:"Independante")+" — "+t.pilot+" — "+fd(t.deadline),ML+2,y);
+          y+=4.5;
+        });
+        y+=4;
+      }
+
+      chk(10);
+      doc.setFontSize(11);doc.setFont("helvetica","bold");doc.setTextColor(20,20,20);
+      doc.text("Detail des projets",ML,y);y+=6;
+
+      projects.forEach(p=>{
+        const pt=tasks.filter(t=>t.project_id===p.id);
+        const prog=calcProgress(p.id,tasks);
+        const needed=10+pt.length*4.5;
+        chk(needed);
+        doc.setFillColor(248,248,248);doc.setDrawColor(210,210,210);doc.roundedRect(ML,y,CW,8,1,1,"FD");
+        doc.setFontSize(9);doc.setFont("helvetica","bold");doc.setTextColor(20,20,20);
+        doc.text(p.name+"  ["+p.status+"]  Pilote: "+p.pilot+"  Avancement: "+prog+"%",ML+3,y+5.5);
+        y+=10;
+        doc.setFont("helvetica","normal");doc.setFontSize(7.5);doc.setTextColor(70,70,70);
+        pt.forEach(t=>{
+          chk(5);
+          const tod=isOD(t.deadline,t.status);
+          if(tod)doc.setTextColor(163,45,45);else doc.setTextColor(70,70,70);
+          doc.text("  - "+t.name+" ["+t.status+"] "+t.pilot+" - Ech: "+fd(t.deadline)+(t.completion_date?" - Fin: "+fd(t.completion_date):""),ML+3,y);
+          y+=4.3;
+        });
+        if(!pt.length){doc.setTextColor(150,150,150);doc.text("  Aucune tache associee.",ML+3,y);y+=4.3;}
+        y+=3;
+      });
+
+      const indepTasks=tasks.filter(t=>!t.project_id);
+      if(indepTasks.length){
+        chk(10);
+        doc.setFontSize(11);doc.setFont("helvetica","bold");doc.setTextColor(20,20,20);
+        doc.text("Taches independantes",ML,y);y+=6;
+        doc.setFont("helvetica","normal");doc.setFontSize(8);
+        indepTasks.forEach(t=>{
+          chk(5);
+          const tod=isOD(t.deadline,t.status);
+          if(tod)doc.setTextColor(163,45,45);else doc.setTextColor(70,70,70);
+          doc.text(t.name+" ["+t.status+"] "+t.pilot+" - Ech: "+fd(t.deadline),ML+2,y);
+          y+=4.5;
+        });
+      }
+
+      doc.setFontSize(7);doc.setFont("helvetica","italic");doc.setTextColor(170,170,170);
+      doc.text("Document genere le "+now.toLocaleDateString("fr-FR")+" - Confidentiel interne",PW/2,PH-5,{align:"center"});
+
+      doc.save("bilan-"+TODAY+".pdf");
+      setPdfState("idle");
+    }catch(e){
+      console.error(e);
+      setPdfState("error");
+    }
+  }
+
   if(print)return(
     <div style={{position:"fixed",inset:0,zIndex:999,background:"#fff",display:"flex",flexDirection:"column"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 16px",background:"#1a6bbf",flexShrink:0}}>
@@ -664,7 +779,7 @@ function ReportModal({html,onClose}){
           <button onClick={onClose} style={{padding:"5px 12px",fontSize:12,background:"#e74c3c",color:"#fff",border:"none",borderRadius:6,cursor:"pointer",fontWeight:600}}>✕ Fermer</button>
         </div>
       </div>
-      <iframe srcDoc={html} style={{flex:1,border:"none",width:"100%"}} title="Rapport"/>
+      <iframe ref={iframeRef} srcDoc={html} style={{flex:1,border:"none",width:"100%"}} title="Rapport"/>
     </div>
   );
   return(
@@ -672,13 +787,17 @@ function ReportModal({html,onClose}){
       <div style={{background:"#fff",borderRadius:12,width:"100%",maxWidth:900,height:"90vh",display:"flex",flexDirection:"column",boxShadow:"0 8px 32px rgba(0,0,0,0.25)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 16px",borderBottom:"1px solid #eee",background:"#f8f8f8",borderRadius:"12px 12px 0 0",flexShrink:0}}>
           <span style={{fontWeight:700,fontSize:14}}>Aperçu du bilan</span>
-          <div style={{display:"flex",gap:8}}>
-            <button onClick={()=>setPrint(true)} style={{padding:"6px 14px",fontSize:12,background:"#1a6bbf",color:"#fff",border:"none",borderRadius:6,cursor:"pointer",fontWeight:600}}>🖨 Imprimer / PDF</button>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            {pdfState==="error"&&<span style={{fontSize:11,color:"#a32d2d"}}>Échec du téléchargement, réessaie</span>}
+            <button onClick={downloadPDF} disabled={pdfState==="loading"} style={{padding:"6px 14px",fontSize:12,background:pdfState==="loading"?"#94b8d8":"#27500A",color:"#fff",border:"none",borderRadius:6,cursor:pdfState==="loading"?"wait":"pointer",fontWeight:600}}>
+              {pdfState==="loading"?"Génération...":"⬇ Télécharger le PDF"}
+            </button>
+            <button onClick={()=>setPrint(true)} style={{padding:"6px 14px",fontSize:12,background:"#1a6bbf",color:"#fff",border:"none",borderRadius:6,cursor:"pointer",fontWeight:600}}>🖨 Aperçu / Imprimer</button>
             <button onClick={onClose} style={{background:"#eee",border:"none",cursor:"pointer",fontSize:14,borderRadius:5,padding:"3px 10px"}}>✕</button>
           </div>
         </div>
         <div style={{background:"#FFF8DC",borderBottom:"1px solid #f0e68c",padding:"7px 16px",fontSize:11,color:"#7a6000",flexShrink:0}}>
-          Clique sur <strong>Imprimer / PDF</strong> puis <strong>Ctrl+P</strong> pour enregistrer en PDF.
+          <strong>⬇ Télécharger le PDF</strong> génère directement un fichier sur ton ordinateur — c'est l'option recommandée.
         </div>
         <iframe srcDoc={html} style={{flex:1,border:"none",borderRadius:"0 0 12px 12px",width:"100%"}} title="Aperçu"/>
       </div>
@@ -818,6 +937,19 @@ export default function App(){
     }).join("");
     const {svg:ganttSvg}=buildGanttSVG(projects,tasks,760);
     const chargeSvg=buildChargeSVG(projects,tasks,pilots,700);
+
+    const indepTasks=tasks.filter(t=>!t.project_id);
+    const indepBlock=indepTasks.length?(
+      '<h2>Tâches indépendantes (sans projet)</h2>'
+      +'<div class="proj no-break"><table><thead><tr><th>Tâche</th><th>Statut</th><th>Pilote</th><th>Site</th><th>Échéance</th><th>Fin réelle</th></tr></thead><tbody>'
+      +indepTasks.map(t=>{
+        const tod=isOD(t.deadline,t.status);
+        const sc2=SC[t.status]||{bg:"#eee",tx:"#333"};
+        return'<tr><td>'+t.name+'</td><td><span class="badge" style="background:'+sc2.bg+';color:'+sc2.tx+'">'+t.status+'</span></td><td>'+t.pilot+'</td><td>'+(t.site||"-")+'</td><td'+(tod?' style="color:#a32d2d;font-weight:700"':"")+'>'+(tod?"(!!) ":"")+fd(t.deadline)+'</td><td>'+(t.completion_date?fd(t.completion_date):"-")+'</td></tr>';
+      }).join("")
+      +'</tbody></table></div>'
+    ):"";
+
     return'<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Bilan S'+wn+'</title><style>'
       +'*{box-sizing:border-box;margin:0;padding:0}'
       +'body{font-family:Arial,sans-serif;font-size:11px;color:#222;background:#fff}'
@@ -860,6 +992,7 @@ export default function App(){
       +'<div class="page-break"></div>'
       +'<h2>Charge des pilotes sur 12 mois</h2><div style="margin-bottom:10px">'+chargeSvg+'</div>'
       +'<h2>Détail des projets</h2>'+rows
+      +indepBlock
       +'</div></body></html>';
   }
 
@@ -871,7 +1004,7 @@ export default function App(){
       {tModal&&<Modal title={tModal.mode==="edit"?"Modifier la tâche":"Nouvelle tâche"} onClose={()=>setTModal(null)}><TaskForm data={tModal.data} projects={projects} pilots={pilots} onSave={saveT} onClose={()=>setTModal(null)}/></Modal>}
       {gantt&&<Modal title="Gantt — cliquer ▶ pour voir les tâches" onClose={()=>setGantt(false)} wide><GanttView projects={projects} tasks={tasks}/><div style={{textAlign:"right",marginTop:12}}><button style={ss.btnS} onClick={()=>setGantt(false)}>Fermer</button></div></Modal>}
       {pilotsModal&&<Modal title="Gérer les pilotes" onClose={()=>setPilotsModal(false)}><PilotsForm pilots={pilots} onClose={()=>setPilotsModal(false)} onRefresh={fetchAll}/></Modal>}
-      {reportModal&&<ReportModal html={buildReport()} onClose={()=>setReportModal(false)}/>}
+      {reportModal&&<ReportModal html={buildReport()} onClose={()=>setReportModal(false)} projects={projects} tasks={tasks} pilots={pilots} kpis={[{l:"Projets actifs",v:activeN},{l:"Tâches en retard",v:odN,d:odN>0},{l:"Tâches terminées",v:doneN},{l:"Avancement moyen",v:avgN+"%"}]}/>}
 
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
         <div>
