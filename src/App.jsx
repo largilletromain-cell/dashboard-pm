@@ -5,8 +5,8 @@ const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 const H = {"Content-Type":"application/json","apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY,"Prefer":"return=representation"};
 
 async function sbGet(t,s="*"){const r=await fetch(SUPA_URL+"/rest/v1/"+t+"?select="+s+"&order=id",{headers:H});return r.json();}
-async function sbIns(t,d){const r=await fetch(SUPA_URL+"/rest/v1/"+t,{method:"POST",headers:H,body:JSON.stringify(d)});return r.json();}
-async function sbUpd(t,id,d){const r=await fetch(SUPA_URL+"/rest/v1/"+t+"?id=eq."+id,{method:"PATCH",headers:H,body:JSON.stringify(d)});return r.json();}
+async function sbIns(t,d){const r=await fetch(SUPA_URL+"/rest/v1/"+t,{method:"POST",headers:H,body:JSON.stringify(d)});const j=await r.json();if(!r.ok){return{error:true,status:r.status,detail:j};}return j;}
+async function sbUpd(t,id,d){const r=await fetch(SUPA_URL+"/rest/v1/"+t+"?id=eq."+id,{method:"PATCH",headers:H,body:JSON.stringify(d)});const j=await r.json();if(!r.ok){return{error:true,status:r.status,detail:j};}return j;}
 async function sbDel(t,id){await fetch(SUPA_URL+"/rest/v1/"+t+"?id=eq."+id,{method:"DELETE",headers:H});}
 
 const STATUSES=["En cours","En attente","Terminé","Bloqué"];
@@ -746,8 +746,13 @@ export default function App(){
     if(!d.created_at)d.created_at=TODAY;
     let res;
     if(tModal.mode==="edit")res=await sbUpd("tasks",id,d);else res=await sbIns("tasks",d);
-    if(!res||res.error){
-      alert("Erreur lors de l'enregistrement : "+JSON.stringify(res));
+    if(res&&res.error){
+      alert("Erreur Supabase ("+res.status+") : "+JSON.stringify(res.detail));
+      console.error("Supabase error:",res);
+      return;
+    }
+    if(!res||(Array.isArray(res)&&res.length===0)){
+      alert("L'enregistrement n'a renvoyé aucune donnée. Vérifie les policies RLS sur la table tasks.");
       return;
     }
     const pid=d.project_id;
