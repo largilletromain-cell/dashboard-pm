@@ -739,8 +739,17 @@ export default function App(){
     setPModal(null);fetchAll();
   }
   async function saveT(f){
-    const{id,...d}=f; d.project_id=d.project_id?Number(d.project_id):null;
-    if(tModal.mode==="edit")await sbUpd("tasks",id,d);else await sbIns("tasks",d);
+    const{id,...d}=f;
+    d.project_id=d.project_id?Number(d.project_id):null;
+    if(!d.completion_date)d.completion_date=null;
+    if(!d.deadline)d.deadline=null;
+    if(!d.created_at)d.created_at=TODAY;
+    let res;
+    if(tModal.mode==="edit")res=await sbUpd("tasks",id,d);else res=await sbIns("tasks",d);
+    if(!res||res.error){
+      alert("Erreur lors de l'enregistrement : "+JSON.stringify(res));
+      return;
+    }
     const pid=d.project_id;
     setTModal(null);
     await fetchAll();
