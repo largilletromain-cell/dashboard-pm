@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { jsPDF } from "jspdf";
 
 const SUPA_URL = "https://foppanucfuwcmephikvq.supabase.co";
 const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZvcHBhbnVjZnV3Y21lcGhpa3ZxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0MjU3OTQsImV4cCI6MjA5ODAwMTc5NH0.KyORf5PFTDr6KX0dc0p_CsjfYIlK_yDKOc0Fk0aqC0U";
