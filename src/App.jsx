@@ -569,15 +569,212 @@ function ReportModal({onClose,projects,tasks,pilots,kpis}){
     setPdfState("loading");
     try{
       if(!window.jspdf){
-        await new Promise((res,rej)=>{const s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";s.onload=res;s.onerror=rej;document.head.appendChild(s);});
-        await new Promise(r=>setTimeout(r,300));
+        await new Promise((res,rej)=>{
+          const s=document.createElement("script");
+          s.src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+          s.onload=res; s.onerror=rej;
+          document.head.appendChild(s);
+        });
+        await new Promise(r=>setTimeout(r,400));
       }
-      if(!window.jspdf?.jsPDF)throw new Error("jsPDF non dispo");
+      if(!window.jspdf?.jsPDF) throw new Error("jsPDF non dispo");
       const {jsPDF}=window.jspdf;
       const doc=new jsPDF({orientation:"portrait",unit:"mm",format:"a4"});
-      await new Promise((res,rej)=>doc.html(buildHTML(),{callback(d){d.save("bilan-"+rFrom+"-au-"+rTo+".pdf");res();},x:5,y:5,width:200,windowWidth:900,margin:[5,5,5,5],autoPaging:"text"}));
+      const PW=210,ML=12,CW=186;
+      let y=14;
+      const now=new Date();
+      const dl=now.toLocaleDateString("fr-FR",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
+      const titre="Bilan du "+fd(rFrom)+" au "+fd(rTo);
+
+      function chk(n=8){if(y+n>290){doc.addPage();y=14;}}
+      function h1(txt){chk(10);doc.setFontSize(16);doc.setFont("helvetica","bold");doc.setTextColor(26,107,191);doc.text(txt,ML,y);y+=8;doc.setTextColor(30,30,30);}
+      function h2(txt){chk(10);doc.setDrawColor(26,107,191);doc.setLineWidth(0.5);doc.line(ML,y,ML+CW,y);y+=4;doc.setFontSize(11);doc.setFont("helvetica","bold");doc.setTextColor(26,107,191);doc.text(txt,ML,y);y+=6;doc.setTextColor(30,30,30);}
+      function body(txt,indent=0){chk(6);doc.setFontSize(9);doc.setFont("helvetica","normal");doc.setTextColor(60,60,60);const lines=doc.splitTextToSize(txt,CW-indent);lines.forEach(l=>{chk(5);doc.text(l,ML+indent,y);y+=4.5;});}
+      function badge(txt,bg,tc,x,yy,w=28){const rgb=hexRGB(bg),tc2=hexRGB(tc);doc.setFillColor(rgb.r,rgb.g,rgb.b);doc.roundedRect(x,yy-3.5,w,5.5,1,1,"F");doc.setFontSize(7.5);doc.setTextColor(tc2.r,tc2.g,tc2.b);doc.setFont("helvetica","bold");doc.text(txt,x+w/2,yy+0.5,{align:"center"});doc.setFont("helvetica","normal");doc.setTextColor(60,60,60);}
+      function pbar(v,xb,yb,wb=80){const col=hexRGB(pgCol(v));doc.setFillColor(232,232,232);doc.roundedRect(xb,yb,wb,3,0.5,0.5,"F");if(v>0){doc.setFillColor(col.r,col.g,col.b);doc.roundedRect(xb,yb,wb*Math.min(v,100)/100,3,0.5,0.5,"F");}doc.setFontSize(7);doc.setTextColor(100,100,100);doc.text(v+"%",xb+wb+2,yb+2.5);}
+      function hexRGB(h){const r=/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(h);return r?{r:parseInt(r[1],16),g:parseInt(r[2],16),b:parseInt(r[3],16)}:{r:0,g:0,b:0};}
+
+      // HEADER
+      h1(titre);
+      doc.setFontSize(9);doc.setFont("helvetica","normal");doc.setTextColor(120,120,120);
+      doc.text("Sites Galilée & Bourgogne — Physique Médicale | Généré le "+dl,ML,y);y+=8;
+
+      // KPIs
+      h2("Indicateurs clés");
+      const kw=(CW-9)/4;
+      [{l:"Projets actifs",v:""+activeN},{l:"Tâches en retard",v:""+odN,d:odN>0},{l:"Tâches terminées",v:""+doneN},{l:"Avancement moyen",v:avgN+"%"}].forEach((k,i)=>{
+        const kx=ML+i*(kw+3);
+        doc.setFillColor(245,245,245);doc.roundedRect(kx,y,kw,14,2,2,"F");
+        doc.setFontSize(7.5);doc.setFont("helvetica","normal");doc.setTextColor(120,120,120);doc.text(k.l,kx+kw/2,y+5,{align:"center"});
+        doc.setFontSize(15);doc.setFont("helvetica","bold");doc.setTextColor(k.d?163:26,k.d?45:107,k.d?45:191);doc.text(k.v,kx+kw/2,y+11,{align:"center"});
+      });
+      y+=20;doc.setTextColor(30,30,30);
+
+      // RETARDS
+      const odT=tasks.filter(t=>isOD(t.deadline,t.status));
+      if(odT.length){
+        h2("Tâches en retard ("+odT.length+")");
+        odT.forEach(t=>{
+          chk(6);
+          const prj=projects.find(p=>p.id===t.project_id);
+          doc.setFontSize(8.5);doc.setFont("helvetica","normal");doc.setTextColor(163,45,45);
+          doc.text("⚠ "+t.name+" — "+(prj?prj.name:"Indép.")+" — "+t.pilot+" — Éch: "+fd(t.deadline),ML+2,y);
+          y+=5;
+        });
+        y+=2;
+      }
+
+      // PROJETS
+      h2("Détail des projets");
+      projects.forEach(p=>{
+        const pt=tasks.filter(t=>t.project_id===p.id);
+        const prog=calcProgress(p.id,tasks);
+        const needed=18+pt.length*5.5;
+        chk(needed);
+        // Fond carte projet
+        doc.setFillColor(240,244,250);doc.setDrawColor(200,210,230);doc.setLineWidth(0.3);
+        doc.roundedRect(ML,y,CW,15,2,2,"FD");
+        // Badges
+        const sc=SC[p.status]||{bg:"#eee",tx:"#333"};
+        const pc2=PC[p.priority||"Moyenne"]||{bg:"#eee",tx:"#333"};
+        badge(p.status,sc.bg,sc.tx,ML+2,y+5,26);
+        badge(p.priority||"Moy.",pc2.bg,pc2.tx,ML+30,y+5,22);
+        if(p.site){doc.setFillColor(240,240,240);doc.roundedRect(ML+54,y+1.5,38,5.5,1,1,"F");doc.setFontSize(7);doc.setTextColor(80,80,80);doc.setFont("helvetica","normal");doc.text(p.site,ML+73,y+5.5,{align:"center"});}
+        // Nom
+        doc.setFontSize(10);doc.setFont("helvetica","bold");doc.setTextColor(20,20,20);
+        doc.text(p.name.slice(0,45),ML+95,y+5.5);
+        // Meta
+        const odP=isOD(p.deadline,p.status);
+        doc.setFontSize(7.5);doc.setFont("helvetica","normal");doc.setTextColor(100,100,100);
+        doc.text("Pilote: "+p.pilot+"  |  Début: "+fd(p.created_at)+"  |  Éch: "+fd(p.deadline)+(odP?" ⚠":"")+"  |  "+pt.filter(t=>t.status==="Terminé").length+"/"+pt.length+" tâches",ML+2,y+11);
+        // Barre
+        pbar(prog,ML+2,y+12.5,CW-20);
+        y+=17;
+        // Tâches
+        if(pt.length){
+          // En-tête tableau
+          doc.setFillColor(244,244,244);doc.rect(ML+2,y,CW-4,5,"F");
+          doc.setFontSize(7.5);doc.setFont("helvetica","bold");doc.setTextColor(80,80,80);
+          doc.text("Tâche",ML+4,y+3.5);doc.text("Statut",ML+80,y+3.5);doc.text("Pilote",ML+112,y+3.5);doc.text("Échéance",ML+142,y+3.5);doc.text("Fin réelle",ML+165,y+3.5);
+          y+=6;
+          pt.forEach((t,ti)=>{
+            chk(6);
+            if(ti%2===0){doc.setFillColor(255,255,255);}else{doc.setFillColor(250,250,250);}
+            doc.rect(ML+2,y-1,CW-4,5.5,"F");
+            const tod=isOD(t.deadline,t.status);
+            const tsc=SC[t.status]||{bg:"#eee",tx:"#333"};
+            doc.setFontSize(8);doc.setFont("helvetica","normal");doc.setTextColor(tod?163:50,tod?45:50,tod?45:50);
+            doc.text((t.name).slice(0,36),ML+4,y+3);
+            badge(t.status,tsc.bg,tsc.tx,ML+78,y+3.5,28);
+            doc.setFontSize(8);doc.setFont("helvetica","normal");doc.setTextColor(60,60,60);
+            doc.text((t.pilot||"").slice(0,14),ML+112,y+3);
+            if(tod)doc.setTextColor(163,45,45);
+            doc.text(fd(t.deadline),ML+142,y+3);
+            doc.setTextColor(39,80,10);
+            doc.text(t.completion_date?fd(t.completion_date):"—",ML+165,y+3);
+            y+=5.5;
+          });
+        }else{
+          chk(5);doc.setFontSize(8);doc.setFont("helvetica","italic");doc.setTextColor(170,170,170);doc.text("Aucune tâche.",ML+4,y+3);y+=5;
+        }
+        if(p.notes){chk(6);doc.setFontSize(8);doc.setFont("helvetica","italic");doc.setFillColor(255,251,238);doc.roundedRect(ML+2,y,CW-4,6,1,1,"F");doc.setTextColor(100,80,0);doc.text("📝 "+p.notes.slice(0,90),ML+4,y+4);y+=7;}
+        y+=4;
+      });
+
+      // TÂCHES INDÉPENDANTES
+      const indT=tasks.filter(t=>!t.project_id);
+      if(indT.length){
+        h2("Tâches indépendantes");
+        doc.setFillColor(244,244,244);doc.rect(ML+2,y,CW-4,5,"F");
+        doc.setFontSize(7.5);doc.setFont("helvetica","bold");doc.setTextColor(80,80,80);
+        doc.text("Tâche",ML+4,y+3.5);doc.text("Statut",ML+80,y+3.5);doc.text("Pilote",ML+112,y+3.5);doc.text("Échéance",ML+142,y+3.5);doc.text("Fin réelle",ML+165,y+3.5);
+        y+=6;
+        indT.forEach((t,ti)=>{
+          chk(6);
+          if(ti%2===0)doc.setFillColor(255,255,255);else doc.setFillColor(250,250,250);
+          doc.rect(ML+2,y-1,CW-4,5.5,"F");
+          const tod=isOD(t.deadline,t.status);
+          const tsc=SC[t.status]||{bg:"#eee",tx:"#333"};
+          doc.setFontSize(8);doc.setFont("helvetica","normal");doc.setTextColor(tod?163:50,tod?45:50,tod?45:50);
+          doc.text((t.name).slice(0,36),ML+4,y+3);
+          badge(t.status,tsc.bg,tsc.tx,ML+78,y+3.5,28);
+          doc.setFontSize(8);doc.setTextColor(60,60,60);doc.text((t.pilot||"").slice(0,14),ML+112,y+3);
+          if(tod)doc.setTextColor(163,45,45);
+          doc.text(fd(t.deadline),ML+142,y+3);
+          doc.setTextColor(39,80,10);doc.text(t.completion_date?fd(t.completion_date):"—",ML+165,y+3);
+          y+=5.5;
+        });
+        y+=4;
+      }
+
+      // STATS PILOTES
+      h2("Statistiques par pilote");
+      pilots.forEach(p=>{
+        chk(30);
+        const myT=tasks.filter(t=>t.pilot===p.name);
+        const inPL=myT.filter(t=>t.status!=="Terminé").reduce((s,t)=>s+taskLoadInPeriod(t,rFrom,rTo),0);
+        const dnL=myT.filter(t=>t.status==="Terminé").reduce((s,t)=>s+taskLoadInPeriod(t,rFrom,rTo),0);
+        const free=Math.max(0,100-inPL-dnL);
+        const delays=myT.filter(t=>t.status==="Terminé"&&t.completion_date).map(t=>taskDelay(t)).filter(v=>v!==null);
+        const avgD=delays.length?delays.reduce((s,v)=>s+v,0)/delays.length:null;
+        const dc=avgD===null?[128,128,128]:avgD<=0?[39,80,10]:avgD<0.2?[186,117,23]:[163,45,45];
+        const pAct=projects.filter(pr=>pr.pilot===p.name&&pr.status!=="Terminé").length;
+        const pDone=projects.filter(pr=>pr.pilot===p.name&&pr.status==="Terminé").length;
+        const tAct=myT.filter(t=>t.status!=="Terminé").length;
+        const tDone=myT.filter(t=>t.status==="Terminé").length;
+        // En-tête pilote
+        doc.setFillColor(26,107,191);doc.roundedRect(ML,y,CW,7,2,2,"F");
+        doc.setFontSize(10);doc.setFont("helvetica","bold");doc.setTextColor(255,255,255);
+        doc.text(p.name,ML+4,y+5);
+        y+=9;
+        // Camembert simplifié (barres horizontales)
+        doc.setFontSize(8);doc.setFont("helvetica","bold");doc.setTextColor(40,40,40);
+        doc.text("Charge sur la période :",ML+2,y+3);y+=5;
+        [{l:"En cours",v:inPL,col:"#378ADD"},{l:"Terminé",v:dnL,col:"#639922"},{l:"Disponible",v:free,col:"#e8e8e8"}].forEach(k=>{
+          chk(5);
+          const rgb=hexRGB(k.col);
+          doc.setFillColor(rgb.r,rgb.g,rgb.b);
+          const bw=Math.max(0,(CW-60)*Math.min(k.v,100)/100);
+          doc.roundedRect(ML+40,y-1,bw||1,4,0.5,0.5,"F");
+          doc.setFontSize(7.5);doc.setFont("helvetica","normal");doc.setTextColor(80,80,80);
+          doc.text(k.l+":",ML+2,y+2.5);
+          doc.text(k.v.toFixed(1)+"%",ML+40+(bw||1)+2,y+2.5);
+          y+=5;
+        });
+        // Délai
+        chk(6);
+        doc.setFontSize(8);doc.setFont("helvetica","bold");doc.setTextColor(...dc);
+        const delayTxt=avgD===null?"Respect délais : Pas de données":avgD<=0?"Respect délais : ✓ À l'heure / En avance":"Respect délais : ⚠ En retard (+"+(avgD*100).toFixed(0)+"%) sur "+delays.length+" tâche(s)";
+        doc.text(delayTxt,ML+2,y+3);y+=6;
+        // Compteurs
+        chk(7);
+        const cols2=[{l:"Projets en cours",v:pAct,c:[26,107,191]},{l:"Projets terminés",v:pDone,c:[39,80,10]},{l:"Tâches en cours",v:tAct,c:[26,107,191]},{l:"Tâches terminées",v:tDone,c:[39,80,10]}];
+        const cw4=(CW-6)/4;
+        cols2.forEach((k,i)=>{
+          const kx=ML+2+i*(cw4+2);
+          doc.setFillColor(i%2===0?240:234,i%2===0?246:243,i%2===0?255:222);
+          doc.roundedRect(kx,y,cw4,10,1,1,"F");
+          doc.setFontSize(6.5);doc.setFont("helvetica","normal");doc.setTextColor(80,80,80);doc.text(k.l,kx+cw4/2,y+4,{align:"center"});
+          doc.setFontSize(12);doc.setFont("helvetica","bold");doc.setTextColor(...k.c);doc.text(""+k.v,kx+cw4/2,y+8.5,{align:"center"});
+        });
+        y+=14;
+        doc.setDrawColor(220,220,220);doc.setLineWidth(0.3);doc.line(ML,y,ML+CW,y);y+=4;
+      });
+
+      // FOOTER
+      doc.setFontSize(7.5);doc.setFont("helvetica","italic");doc.setTextColor(180,180,180);
+      const pages=doc.getNumberOfPages();
+      for(let i=1;i<=pages;i++){
+        doc.setPage(i);
+        doc.text("Généré le "+dl+" — Confidentiel interne — Page "+i+"/"+pages,PW/2,295,{align:"center"});
+      }
+
+      doc.save("bilan-"+rFrom+"-au-"+rTo+".pdf");
       setPdfState("idle");
-    }catch(e){console.error(e);setPdfState("error");}
+    }catch(e){
+      console.error(e);
+      setPdfState("error");
+    }
   }
 
   if(step==="preview"){
