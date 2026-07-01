@@ -569,31 +569,18 @@ function ReportModal({onClose,projects,tasks,pilots,kpis}){
 async function downloadPDF(){
     setPdfState("loading");
     try{
-      if(!window.jspdf){
-        await new Promise((res,rej)=>{
-          const s=document.createElement("script");
-          s.src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
-          s.onload=res; s.onerror=rej;
-          document.head.appendChild(s);
-        });
-        await new Promise(r=>setTimeout(r,400));
-      }
-      if(!window.jspdf?.jsPDF) throw new Error("jsPDF non dispo");
-      const {jsPDF}=window.jspdf;
-      const doc=new jsPDF({orientation:"portrait",unit:"mm",format:"a4"});
-      const PW=210,ML=12,CW=186;
+      const doc = new jsPDF({orientation:"portrait", unit:"mm", format:"a4"});
+      const ML=12, CW=186, PH=297;
       let y=14;
       const now=new Date();
       const dl=now.toLocaleDateString("fr-FR",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
-      const titre="Bilan du "+fd(rFrom)+" au "+fd(rTo);
 
-      function chk(n=8){if(y+n>290){doc.addPage();y=14;}}
+      function chk(n){if(y+n>PH-12){doc.addPage();y=14;}}
       function h2(txt){chk(10);doc.setDrawColor(26,107,191);doc.setLineWidth(0.5);doc.line(ML,y,ML+CW,y);y+=4;doc.setFontSize(11);doc.setFont("helvetica","bold");doc.setTextColor(26,107,191);doc.text(txt,ML,y);y+=6;doc.setTextColor(30,30,30);}
-      function hexRGB(h){const r=/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(h);return r?{r:parseInt(r[1],16),g:parseInt(r[2],16),b:parseInt(r[3],16)}:{r:0,g:0,b:0};}
 
       // HEADER
       doc.setFontSize(18);doc.setFont("helvetica","bold");doc.setTextColor(26,107,191);
-      doc.text(titre,ML,y);y+=7;
+      doc.text("Bilan du "+fd(rFrom)+" au "+fd(rTo),ML,y);y+=7;
       doc.setFontSize(9);doc.setFont("helvetica","normal");doc.setTextColor(120,120,120);
       doc.text("Sites Galilee & Bourgogne | Genere le "+dl,ML,y);y+=5;
       doc.setDrawColor(26,107,191);doc.setLineWidth(0.5);doc.line(ML,y,ML+CW,y);y+=6;
@@ -621,7 +608,8 @@ async function downloadPDF(){
           doc.setFontSize(8.5);doc.setFont("helvetica","normal");doc.setTextColor(163,45,45);
           doc.text("- "+t.name.slice(0,45)+" | "+(prj?prj.name.slice(0,20):"Indep.")+" | "+t.pilot+" | "+fd(t.deadline),ML+2,y);
           y+=4.5;
-        });y+=3;
+        });
+        y+=3;
       }
 
       // Projets
@@ -683,7 +671,8 @@ async function downloadPDF(){
           doc.text(fd(t.deadline),ML+158,y+3);
           if(t.completion_date){doc.setTextColor(39,80,10);doc.text(fd(t.completion_date),ML+175,y+3);}
           y+=5;
-        });y+=3;
+        });
+        y+=3;
       }
 
       // Stats pilotes
@@ -700,9 +689,11 @@ async function downloadPDF(){
         const pDone=projects.filter(pr=>pr.pilot===p.name&&pr.status==="Terminé").length;
         const tAct=myT.filter(t=>t.status!=="Terminé").length;
         const tDone=myT.filter(t=>t.status==="Terminé").length;
+
         doc.setFillColor(26,107,191);doc.roundedRect(ML,y,CW,7,2,2,"F");
         doc.setFontSize(10);doc.setFont("helvetica","bold");doc.setTextColor(255,255,255);
         doc.text(p.name,ML+4,y+5);y+=9;
+
         doc.setFontSize(8);doc.setFont("helvetica","bold");doc.setTextColor(40,40,40);
         doc.text("Charge sur la periode :",ML+2,y+3);y+=5;
         [[inPL,55,138,221,"En cours"],[dnL,99,153,34,"Termine"],[free,200,200,200,"Disponible"]].forEach(k=>{
@@ -715,10 +706,12 @@ async function downloadPDF(){
           doc.text(lbl+":",ML+2,y+2);doc.text(val.toFixed(1)+"%",ML+40+(bw||1)+2,y+2);
           y+=5;
         });
+
         chk(6);
         const dc=avgD===null?[128,128,128]:avgD<=0?[39,80,10]:avgD<0.2?[186,117,23]:[163,45,45];
         doc.setFontSize(8.5);doc.setFont("helvetica","bold");doc.setTextColor(...dc);
         doc.text(avgD===null?"Respect delais: pas de donnees":avgD<=0?"Respect delais: a l'heure":"Respect delais: en retard (+"+(avgD*100).toFixed(0)+"%) sur "+delays.length+" tache(s)",ML+2,y+3);y+=6;
+
         chk(10);
         const cw4=(CW-6)/4;
         [{l:"Projets en cours",v:pAct,blue:true},{l:"Projets termines",v:pDone,blue:false},{l:"Taches en cours",v:tAct,blue:true},{l:"Taches terminees",v:tDone,blue:false}].forEach((k,i)=>{
@@ -739,7 +732,7 @@ async function downloadPDF(){
       for(let i=1;i<=pages;i++){
         doc.setPage(i);
         doc.setFontSize(7.5);doc.setFont("helvetica","italic");doc.setTextColor(180,180,180);
-        doc.text("Genere le "+dl+" - Confidentiel interne - Page "+i+"/"+pages,ML+CW/2,290,{align:"center"});
+        doc.text("Genere le "+dl+" - Confidentiel interne - Page "+i+"/"+pages,ML+CW/2,PH-5,{align:"center"});
       }
       doc.save("bilan-"+rFrom+"-au-"+rTo+".pdf");
       setPdfState("idle");
