@@ -91,8 +91,9 @@ function ProjForm({data,pilots,tasks,onSave,onClose}){
       <div style={{gridColumn:"1/-1"}}><label style={ss.lbl}>Nom *</label><input style={ss.inp} value={f.name||""} onChange={set("name")} placeholder="Nom du projet"/></div>
       <div><label style={ss.lbl}>Statut</label><select style={ss.inp} value={f.status||"En cours"} onChange={set("status")}>{STATUSES.map(s=><option key={s}>{s}</option>)}</select></div>
       <div><label style={ss.lbl}>Priorité</label><select style={ss.inp} value={f.priority||"Moyenne"} onChange={set("priority")}>{PRIORITIES.map(s=><option key={s}>{s}</option>)}</select></div>
-      <div><label style={ss.lbl}>Pilote</label><select style={ss.inp} value={f.pilot||""} onChange={set("pilot")}>{pilots.map(s=><option key={s.id}>{s.name}</option>)}</select></div>
+      <div><label style={ss.lbl}>Pilote principal *</label><select style={ss.inp} value={f.pilot||""} onChange={set("pilot")}>{pilots.map(s=><option key={s.id}>{s.name}</option>)}</select></div>
       <div><label style={ss.lbl}>Site</label><select style={ss.inp} value={f.site||SITES[0]} onChange={set("site")}>{SITES.map(s=><option key={s}>{s}</option>)}</select></div>
+      <div style={{gridColumn:"1/-1"}}><label style={ss.lbl}>Pilote secondaire <span style={{color:"#aaa",fontWeight:400}}>(optionnel)</span></label><select style={ss.inp} value={f.pilot2||""} onChange={set("pilot2")}><option value="">— Aucun —</option>{pilots.filter(p=>p.name!==f.pilot).map(s=><option key={s.id}>{s.name}</option>)}</select></div>
       <div style={{gridColumn:"1/-1",background:"#f0f6ff",borderRadius:8,padding:"8px 12px"}}>
         <div style={{fontSize:11,color:"#555",marginBottom:4}}>Avancement automatique (basé sur les tâches terminées)</div>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -128,9 +129,10 @@ function TaskForm({data,projects,pilots,onSave,onClose}){
       </div>
       <div><label style={ss.lbl}>Statut</label><select style={ss.inp} value={f.status||"En attente"} onChange={set("status")}>{STATUSES.map(s=><option key={s}>{s}</option>)}</select></div>
       <div><label style={ss.lbl}>Priorité</label><select style={ss.inp} value={f.priority||"Moyenne"} onChange={set("priority")}>{PRIORITIES.map(s=><option key={s}>{s}</option>)}</select></div>
-      <div><label style={ss.lbl}>Pilote</label><select style={ss.inp} value={f.pilot||""} onChange={set("pilot")}>{pilots.map(s=><option key={s.id}>{s.name}</option>)}</select></div>
+      <div><label style={ss.lbl}>Pilote principal *</label><select style={ss.inp} value={f.pilot||""} onChange={set("pilot")}>{pilots.map(s=><option key={s.id}>{s.name}</option>)}</select></div>
       <div><label style={ss.lbl}>Site</label><select style={ss.inp} value={f.site||SITES[0]} onChange={set("site")}>{SITES.map(s=><option key={s}>{s}</option>)}</select></div>
-      <div style={{gridColumn:"1/-1"}}><label style={ss.lbl}>Pondération temps : {f.weight||0}%</label><input type="range" min={0} max={100} step={5} value={f.weight||0} onChange={e=>setF(x=>({...x,weight:Number(e.target.value)}))} style={{width:"100%"}}/></div>
+      <div style={{gridColumn:"1/-1"}}><label style={ss.lbl}>Pilote secondaire <span style={{color:"#aaa",fontWeight:400}}>(optionnel)</span></label><select style={ss.inp} value={f.pilot2||""} onChange={set("pilot2")}><option value="">— Aucun —</option>{pilots.filter(p=>p.name!==f.pilot).map(s=><option key={s.id}>{s.name}</option>)}</select></div>
+      <div style={{gridColumn:"1/-1"}}><label style={ss.lbl}>Pondération temps : {f.weight||0}%</label><div style={{display:"flex",alignItems:"center",gap:8}}><input type="range" min={0} max={100} step={1} value={f.weight||0} onChange={e=>setF(x=>({...x,weight:Number(e.target.value)}))} style={{flex:1}}/><input type="number" min={0} max={100} step={1} value={f.weight||0} onChange={e=>setF(x=>({...x,weight:Math.min(100,Math.max(0,Number(e.target.value)))}))} style={{...ss.inp,width:60,textAlign:"center"}}/></div></div>
       <div><label style={ss.lbl}>Date de début</label><input type="date" style={ss.inp} value={f.created_at||TODAY} onChange={set("created_at")}/></div>
       <div><label style={ss.lbl}>Échéance</label><input type="date" style={ss.inp} value={f.deadline||""} onChange={set("deadline")}/></div>
       <div style={{gridColumn:"1/-1"}}><label style={ss.lbl}>Date de fin effective {f.status!=="Terminé"&&<span style={{color:"#aaa",fontWeight:400}}>(renseignée à la clôture)</span>}</label><input type="date" style={ss.inp} value={f.completion_date||""} onChange={set("completion_date")}/></div>
@@ -723,8 +725,8 @@ export default function App(){
   },[]);
   useEffect(()=>{fetchAll();},[fetchAll]);
 
-  const EP={name:"",status:"En cours",priority:"Moyenne",deadline:"",progress:0,pilot:pilots[0]?.name||"",site:SITES[0],description:"",notes:"",weight:0,created_at:TODAY};
-  const ET={project_id:null,name:"",status:"En attente",priority:"Moyenne",pilot:pilots[0]?.name||"",site:SITES[0],deadline:"",notes:"",weight:0,created_at:TODAY,completion_date:""};
+  const EP={name:"",status:"En cours",priority:"Moyenne",deadline:"",progress:0,pilot:pilots[0]?.name||"",pilot2:"",site:SITES[0],description:"",notes:"",weight:0,created_at:TODAY};
+  const ET={project_id:null,name:"",status:"En attente",priority:"Moyenne",pilot:pilots[0]?.name||"",pilot2:"",site:SITES[0],deadline:"",notes:"",weight:0,created_at:TODAY,completion_date:""};
 
   async function saveP(f){
     const{id,...d}=f;
@@ -944,7 +946,7 @@ export default function App(){
             <div style="display:flex;gap:5px;flex-wrap:wrap">${sBadge(p.status)} ${pBadge(p.priority||"Moyenne")} ${p.site?siteBadge(p.site):""}</div>
           </div>
           <div style="text-align:right;font-size:9px;color:#666;line-height:1.8">
-            <div>Pilote : <b>${p.pilot}</b></div>
+            <div>Pilote : <b>${p.pilot}</b>${p.pilot2?` <span style="color:#888;font-size:8px">+ ${p.pilot2}</span>`:""}</div>
             <div style="${od?"color:#d9534f;font-weight:700":""}">Échéance : ${fd(p.deadline)}${od?" ⚠":""}</div>
             <div>${done}/${pt.length} tâche${pt.length>1?"s":""} terminée${done>1?"s":""}</div>
           </div>
@@ -963,7 +965,7 @@ export default function App(){
             return`<tr>
               <td style="font-weight:500">${t.name}${t.notes?` <span style="color:#BA7517">📝</span>`:""}</td>
               <td>${badge(t.status,sc2.bg,sc2.tx)}</td>
-              <td>${t.pilot}</td>
+              <td>${t.pilot}${t.pilot2?` <span style="color:#888;font-size:8px">+${t.pilot2}</span>`:""}</td>
               <td style="text-align:center">${(t.weight||0)>0?`<span style="background:#f0f0f0;font-size:8px;padding:1px 5px;border-radius:3px">${t.weight}%</span>`:"—"}</td>
               <td style="${tod?"color:#d9534f;font-weight:700":""}">${fd(t.deadline)}${tod?" ⚠":""}</td>
               <td>${t.completion_date?fd(t.completion_date):"—"}</td>
@@ -1147,7 +1149,7 @@ export default function App(){
               {p.description&&<div style={{fontSize:11,color:"#666",marginBottom:5}}>{p.description}</div>}
               {p.notes&&<div style={{fontSize:11,color:"#555",background:"#fffbee",border:"1px solid #f0e68c",borderRadius:6,padding:"5px 9px",marginBottom:6,whiteSpace:"pre-wrap"}}>📝 {p.notes}</div>}
               <div style={{display:"flex",gap:12,fontSize:11,color:"#666",marginBottom:7,flexWrap:"wrap"}}>
-                <span>Pilote : {p.pilot}</span>
+                <span>Pilote : {p.pilot}{p.pilot2&&<span style={{color:"#888"}}> + {p.pilot2}</span>}</span>
                 {p.deadline&&<span style={{color:od?"#a32d2d":"#666"}}>Échéance : {fd(p.deadline)}{od?" (!!)":""}</span>}
                 <span style={{color:"#bbb"}}>Ajouté : {fd(p.created_at)}</span>
                 <span>{done}/{tc} tâche{tc>1?"s":""} terminée{done>1?"s":""}</span>
@@ -1179,7 +1181,7 @@ export default function App(){
                 <Badge label={t.status} c={SC[t.status]||{bg:"#eee",tx:"#333"}}/>
                 {t.priority&&<Badge label={t.priority} c={PC[t.priority]||{bg:"#eee",tx:"#555"}}/>}
                 {t.site&&<Badge label={t.site} c={SIC[t.site]||{bg:"#eee",tx:"#555"}}/>}
-                <span style={{fontSize:11,color:"#666"}}>Pilote : {t.pilot}</span>
+                <span style={{fontSize:11,color:"#666"}}>Pilote : {t.pilot}{t.pilot2&&<span style={{color:"#888"}}> + {t.pilot2}</span>}</span>
                 {t.deadline&&<span style={{fontSize:11,color:od?"#a32d2d":"#666"}}>Éch. {fd(t.deadline)}{od?" (!!)":""}</span>}
                 {t.completion_date&&<span style={{fontSize:11,color:"#27500A"}}>Fin réelle : {fd(t.completion_date)}</span>}
                 <span style={{fontSize:10,color:"#bbb"}}>Début : {fd(t.created_at)}</span>
