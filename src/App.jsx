@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 
-const SUPA_URL = "https://foppanucfuwcmephikvq.supabase.co"; 
+const SUPA_URL = "https://foppanucfuwcmephikvq.supabase.co";
 const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZvcHBhbnVjZnV3Y21lcGhpa3ZxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0MjU3OTQsImV4cCI6MjA5ODAwMTc5NH0.KyORf5PFTDr6KX0dc0p_CsjfYIlK_yDKOc0Fk0aqC0U";
 const H = {"Content-Type":"application/json","apikey":SUPA_KEY,"Authorization":"Bearer "+SUPA_KEY,"Prefer":"return=representation"};
 
@@ -1119,29 +1119,31 @@ export default function App(){
     // ── To-do list ──
     const pendingTodos=todos.filter(t=>!t.done);
     const doneTodos=todos.filter(t=>t.done);
-    const todoBlock=todos.length?`
-    <div class="section-block no-break">
-      <div class="section-title">✅ To-do list (${pendingTodos.length} en attente · ${doneTodos.length} fait${doneTodos.length>1?"s":""})</div>
-      <table>
-        <thead><tr><th style="width:30px"></th><th>Intitulé</th><th>Assigné à</th><th>Date limite</th><th>Statut</th></tr></thead>
-        <tbody>${[...todos].sort((a,b)=>{
-          if(a.done!==b.done)return a.done?1:-1;
-          return (a.due_date||"9999")<(b.due_date||"9999")?-1:1;
-        }).map(t=>{
-          const od=!t.done&&t.due_date&&t.due_date<TODAY;
-          return\`<tr style="opacity:\${t.done?0.6:1}">
-            <td style="text-align:center;font-size:14px">\${t.done?"☑":"☐"}</td>
-            <td style="font-weight:\${t.done?"400":"600"};text-decoration:\${t.done?"line-through":"none"};color:\${t.done?"#aaa":"#111"}">\${t.title}</td>
-            <td>\${t.assigned_to||"—"}</td>
-            <td style="\${od?"color:#d9534f;font-weight:700":""}">\${t.due_date?fd(t.due_date):"—"}\${od?" ⚠":""}</td>
-            <td>\${t.done?
-              \`<span style="background:#EAF3DE;color:#27500A;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px">✓ Fait</span>\`:
-              \`<span style="background:#E6F1FB;color:#0C447C;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px">En attente</span>\`
-            }</td>
-          </tr>\`;
-        }).join("")}</tbody>
-      </table>
-    </div>`:"";
+    function buildTodoRow(t){
+      const od=!t.done&&t.due_date&&t.due_date<TODAY;
+      const badgeDone='<span style="background:#EAF3DE;color:#27500A;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px">&#10003; Fait</span>';
+      const badgePending='<span style="background:#E6F1FB;color:#0C447C;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px">En attente</span>';
+      return '<tr style="opacity:'+(t.done?0.6:1)+'">'
+        +'<td style="text-align:center;font-size:14px">'+(t.done?"&#9745;":"&#9744;")+'</td>'
+        +'<td style="font-weight:'+(t.done?"400":"600")+';text-decoration:'+(t.done?"line-through":"none")+';color:'+(t.done?"#aaa":"#111")+'">'+t.title+'</td>'
+        +'<td>'+(t.assigned_to||"—")+'</td>'
+        +'<td style="'+(od?"color:#d9534f;font-weight:700":"")+'">'+(t.due_date?fd(t.due_date):"—")+(od?" &#9888;":"")+'</td>'
+        +'<td>'+(t.done?badgeDone:badgePending)+'</td>'
+        +'</tr>';
+    }
+    const todoRows=[...todos].sort((a,b)=>{
+      if(a.done!==b.done)return a.done?1:-1;
+      return (a.due_date||"9999")<(b.due_date||"9999")?-1:1;
+    }).map(t=>buildTodoRow(t)).join("");
+    const todoBlock=todos.length
+      ?'<div class="section-block no-break">'
+        +'<div class="section-title">&#10003; To-do list ('+pendingTodos.length+' en attente &middot; '+doneTodos.length+' fait'+(doneTodos.length>1?"s":"")+')</div>'
+        +'<table>'
+        +'<thead><tr><th style="width:30px"></th><th>Intitul&eacute;</th><th>Assign&eacute; &agrave;</th><th>Date limite</th><th>Statut</th></tr></thead>'
+        +'<tbody>'+todoRows+'</tbody>'
+        +'</table>'
+        +'</div>'
+      :"";
 
     // ── CSS ──
     const css=`
