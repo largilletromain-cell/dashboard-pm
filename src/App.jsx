@@ -680,6 +680,123 @@ function ReportModal({html, onClose}){
   );
 }
 
+
+function TodoForm({data,pilots,onSave,onClose}){
+  const [f,setF]=useState({...data});
+  const set=k=>e=>setF(x=>({...x,[k]:e.target.value}));
+  return(
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+      <div style={{gridColumn:"1/-1"}}><label style={ss.lbl}>Intitulé *</label><input style={ss.inp} value={f.title||""} onChange={set("title")} placeholder="Ce qu'il faut faire..."/></div>
+      <div><label style={ss.lbl}>Assigné à</label><select style={ss.inp} value={f.assigned_to||""} onChange={set("assigned_to")}><option value="">— Non assigné —</option>{pilots.map(p=><option key={p.id}>{p.name}</option>)}</select></div>
+      <div><label style={ss.lbl}>Date limite</label><input type="date" style={ss.inp} value={f.due_date||""} onChange={set("due_date")}/></div>
+      <div style={{gridColumn:"1/-1"}}><label style={ss.lbl}>Notes</label><textarea style={{...ss.inp,height:56,resize:"vertical"}} value={f.notes||""} onChange={set("notes")}/></div>
+      <div style={{gridColumn:"1/-1",display:"flex",gap:8,marginTop:4}}>
+        <button style={ss.btnP} onClick={()=>(f.title||"").trim()&&onSave(f)}>Enregistrer</button>
+        <button style={ss.btnS} onClick={onClose}>Annuler</button>
+      </div>
+    </div>
+  );
+}
+
+function TodoView({pilots}){
+  const [todos,setTodos]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [modal,setModal]=useState(null);
+  const [sortBy,setSortBy]=useState("date"); // "date" | "status"
+
+  const ET_TODO={title:"",assigned_to:"",due_date:"",done:false,notes:""};
+
+  async function fetchTodos(){
+    setLoading(true);
+    const r=await sbGet("todos");
+    setTodos(Array.isArray(r)?r:[]);
+    setLoading(false);
+  }
+  useEffect(()=>{fetchTodos();},[]);
+
+  async function saveTodo(f){
+    const{id,...d}=f;
+    d.done=!!d.done;
+    if(!d.due_date)d.due_date=null;
+    if(modal.mode==="edit")await sbUpd("todos",id,d);
+    else await sbIns("todos",d);
+    setModal(null);fetchTodos();
+  }
+
+  async function toggleDone(todo){
+    await sbUpd("todos",todo.id,{done:!todo.done});
+    setTodos(ts=>ts.map(t=>t.id===todo.id?{...t,done:!t.done}:t));
+  }
+
+  async function delTodo(id){
+    if(!window.confirm("Supprimer cet élément ?"))return;
+    await sbDel("todos",id);fetchTodos();
+  }
+
+  const sorted=[...todos].sort((a,b)=>{
+    if(sortBy==="status"){
+      if(a.done!==b.done)return a.done?1:-1;
+      return (a.due_date||"9999")<(b.due_date||"9999")?-1:1;
+    }
+    return (a.due_date||"9999")<(b.due_date||"9999")?-1:1;
+  });
+
+  const pending=todos.filter(t=>!t.done).length;
+  const overdue=todos.filter(t=>!t.done&&t.due_date&&t.due_date<TODAY).length;
+
+  return(
+    <div>
+      {modal&&<Modal title={modal.mode==="edit"?"Modifier":"Nouvel élément"} onClose={()=>setModal(null)}>
+        <TodoForm data={modal.data} pilots={pilots} onSave={saveTodo} onClose={()=>setModal(null)}/>
+      </Modal>}
+
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
+        <div style={{display:"flex",gap:10}}>
+          <div style={{background:"#f0f6ff",borderRadius:8,padding:"7px 14px",fontSize:12}}>
+            <span style={{color:"#666"}}>En attente : </span><b style={{color:"#1a6bbf"}}>{pending}</b>
+          </div>
+          {overdue>0&&<div style={{background:"#FCEBEB",borderRadius:8,padding:"7px 14px",fontSize:12}}>
+            <span style={{color:"#791F1F"}}>En retard : </span><b style={{color:"#791F1F"}}>{overdue}</b>
+          </div>}
+        </div>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <span style={{fontSize:11,color:"#666"}}>Trier :</span>
+          <button onClick={()=>setSortBy("date")} style={{...ss.btnS,fontSize:11,padding:"3px 9px",background:sortBy==="date"?"#e8f0fb":"#f0f0f0",color:sortBy==="date"?"#1a6bbf":"#333",fontWeight:sortBy==="date"?700:400}}>Par date</button>
+          <button onClick={()=>setSortBy("status")} style={{...ss.btnS,fontSize:11,padding:"3px 9px",background:sortBy==="status"?"#e8f0fb":"#f0f0f0",color:sortBy==="status"?"#1a6bbf":"#333",fontWeight:sortBy==="status"?700:400}}>Par statut</button>
+          <button style={ss.btnP} onClick={()=>setModal({mode:"add",data:{...ET_TODO}})}>+ Ajouter</button>
+        </div>
+      </div>
+
+      {loading&&<Spinner/>}
+      {!loading&&sorted.length===0&&<p style={{color:"#aaa",fontSize:13,textAlign:"center",padding:32}}>Aucun élément dans la liste. Cliquez sur + Ajouter pour commencer.</p>}
+      {!loading&&sorted.map(todo=>{
+        const od=!todo.done&&todo.due_date&&todo.due_date<TODAY;
+        return(
+          <div key={todo.id} style={{background:"#fff",border:"1px solid "+(od?"#f09595":todo.done?"#d4edda":"#e0e0e0"),borderRadius:8,padding:"10px 13px",marginBottom:7,display:"flex",alignItems:"flex-start",gap:10,opacity:todo.done?0.65:1}}>
+            <input type="checkbox" checked={!!todo.done} onChange={()=>toggleDone(todo)}
+              style={{width:16,height:16,marginTop:2,accentColor:"#1a6bbf",cursor:"pointer",flexShrink:0}}/>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:todo.notes?4:0}}>
+                <span style={{fontWeight:700,fontSize:13,textDecoration:todo.done?"line-through":"none",color:todo.done?"#aaa":"#111"}}>{todo.title}</span>
+                {todo.assigned_to&&<span style={{background:"#e8f0fb",color:"#1a6bbf",fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4}}>{todo.assigned_to}</span>}
+                {todo.due_date&&<span style={{fontSize:11,color:od?"#a32d2d":todo.done?"#27500A":"#666",fontWeight:od?700:400}}>
+                  📅 {fd(todo.due_date)}{od?" ⚠":""}
+                </span>}
+                {todo.done&&<span style={{background:"#EAF3DE",color:"#27500A",fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4}}>✓ Fait</span>}
+              </div>
+              {todo.notes&&<div style={{fontSize:11,color:"#666",marginTop:3,whiteSpace:"pre-wrap"}}>{todo.notes}</div>}
+            </div>
+            <div style={{display:"flex",gap:6,flexShrink:0}}>
+              <button style={ss.btnS} onClick={()=>setModal({mode:"edit",data:{...todo}})}>Modifier</button>
+              <button style={ss.btnD} onClick={()=>delTodo(todo.id)}>Suppr.</button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function applySort(items,key,dir){
   if(!key)return items;
   if(key==="site"){
@@ -707,6 +824,7 @@ export default function App(){
   const [projects,setProjects]=useState([]);
   const [tasks,setTasks]=useState([]);
   const [pilots,setPilots]=useState([]);
+  const [todos,setTodos]=useState([]);
   const [loading,setLoading]=useState(true);
   const [view,setView]=useState("projects");
   const [fSt,setFSt]=useState(""); const [fPil,setFPil]=useState(""); const [fSite,setFSite]=useState("");
@@ -719,8 +837,8 @@ export default function App(){
 
   const fetchAll=useCallback(async()=>{
     setLoading(true);
-    const [p,t,pl]=await Promise.all([sbGet("projects"),sbGet("tasks"),sbGet("pilots","*&order=position")]);
-    setProjects(Array.isArray(p)?p:[]); setTasks(Array.isArray(t)?t:[]); setPilots(Array.isArray(pl)?pl:[]);
+    const [p,t,pl,td]=await Promise.all([sbGet("projects"),sbGet("tasks"),sbGet("pilots","*&order=position"),sbGet("todos")]);
+    setProjects(Array.isArray(p)?p:[]); setTasks(Array.isArray(t)?t:[]); setPilots(Array.isArray(pl)?pl:[]); setTodos(Array.isArray(td)?td:[]);
     setLoading(false);
   },[]);
   useEffect(()=>{fetchAll();},[fetchAll]);
@@ -997,6 +1115,34 @@ export default function App(){
       </table>
     </div>`:"";
 
+
+    // ── To-do list ──
+    const pendingTodos=todos.filter(t=>!t.done);
+    const doneTodos=todos.filter(t=>t.done);
+    const todoBlock=todos.length?`
+    <div class="section-block no-break">
+      <div class="section-title">✅ To-do list (${pendingTodos.length} en attente · ${doneTodos.length} fait${doneTodos.length>1?"s":""})</div>
+      <table>
+        <thead><tr><th style="width:30px"></th><th>Intitulé</th><th>Assigné à</th><th>Date limite</th><th>Statut</th></tr></thead>
+        <tbody>${[...todos].sort((a,b)=>{
+          if(a.done!==b.done)return a.done?1:-1;
+          return (a.due_date||"9999")<(b.due_date||"9999")?-1:1;
+        }).map(t=>{
+          const od=!t.done&&t.due_date&&t.due_date<TODAY;
+          return\`<tr style="opacity:\${t.done?0.6:1}">
+            <td style="text-align:center;font-size:14px">\${t.done?"☑":"☐"}</td>
+            <td style="font-weight:\${t.done?"400":"600"};text-decoration:\${t.done?"line-through":"none"};color:\${t.done?"#aaa":"#111"}">\${t.title}</td>
+            <td>\${t.assigned_to||"—"}</td>
+            <td style="\${od?"color:#d9534f;font-weight:700":""}">\${t.due_date?fd(t.due_date):"—"}\${od?" ⚠":""}</td>
+            <td>\${t.done?
+              \`<span style="background:#EAF3DE;color:#27500A;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px">✓ Fait</span>\`:
+              \`<span style="background:#E6F1FB;color:#0C447C;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px">En attente</span>\`
+            }</td>
+          </tr>\`;
+        }).join("")}</tbody>
+      </table>
+    </div>`:"";
+
     // ── CSS ──
     const css=`
       *{box-sizing:border-box;margin:0;padding:0}
@@ -1061,6 +1207,7 @@ export default function App(){
       </div>
       ${projRows}
       ${indepBlock}
+      ${todoBlock}
 
       <div class="footer">
         Rapport généré le ${now.toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})} à ${now.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}
@@ -1103,14 +1250,15 @@ export default function App(){
       </div>
 
       <div style={{display:"flex",borderBottom:"1px solid #ddd",marginBottom:12}}>
-        {[["projects","Projets ("+projects.length+")"],["tasks","Tâches ("+tasks.length+")"],["stats","Statistiques pilotes"]].map(([v,l])=>(
+        {[["projects","Projets ("+projects.length+")"],["tasks","Tâches ("+tasks.length+")"],["stats","Statistiques pilotes"],["todo","To-do list ✓ ("+todos.filter(t=>!t.done).length+"/"+todos.length+")"]].map(([v,l])=>(
           <button key={v} onClick={()=>setView(v)} style={{padding:"6px 15px",fontSize:12,background:"none",border:"none",borderBottom:view===v?"2px solid #111":"2px solid transparent",color:view===v?"#111":"#666",cursor:"pointer",fontWeight:view===v?700:400}}>{l}</button>
         ))}
       </div>
 
+      {view==="todo"&&<TodoView pilots={pilots}/> }
       {view==="stats"&&<StatsView projects={projects} tasks={tasks} pilots={pilots} dateFrom={reportDateFrom} setDateFrom={setReportDateFrom} dateTo={reportDateTo} setDateTo={setReportDateTo}/>}
 
-      {view!=="stats"&&<>
+      {view!=="stats"&&view!=="todo"&&<>
         <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap",alignItems:"center"}}>
           <select style={ss.sel} value={fSt} onChange={e=>setFSt(e.target.value)}><option value="">Tous les statuts</option>{STATUSES.map(s=><option key={s}>{s}</option>)}</select>
           <select style={ss.sel} value={fPil} onChange={e=>setFPil(e.target.value)}><option value="">Tous les pilotes</option>{pilots.map(p=><option key={p.id}>{p.name}</option>)}</select>
