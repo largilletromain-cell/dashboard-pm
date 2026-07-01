@@ -566,7 +566,6 @@ function ReportModal({onClose,projects,tasks,pilots,kpis}){
       +'</body></html>';
   }
 
-  
 async function downloadPDF(){
     setPdfState("loading");
     try{
@@ -586,6 +585,7 @@ async function downloadPDF(){
       setPdfState("error");
     }
   }
+
 
 function applySort(items,key,dir){
   if(!key)return items;
