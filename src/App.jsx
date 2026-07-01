@@ -698,21 +698,11 @@ function TodoForm({data,pilots,onSave,onClose}){
   );
 }
 
-function TodoView({pilots}){
-  const [todos,setTodos]=useState([]);
-  const [loading,setLoading]=useState(true);
+function TodoView({pilots,todos,onRefresh}){
   const [modal,setModal]=useState(null);
   const [sortBy,setSortBy]=useState("date"); // "date" | "status"
 
   const ET_TODO={title:"",assigned_to:"",due_date:"",done:false,notes:""};
-
-  async function fetchTodos(){
-    setLoading(true);
-    const r=await sbGet("todos");
-    setTodos(Array.isArray(r)?r:[]);
-    setLoading(false);
-  }
-  useEffect(()=>{fetchTodos();},[]);
 
   async function saveTodo(f){
     const{id,...d}=f;
@@ -720,17 +710,17 @@ function TodoView({pilots}){
     if(!d.due_date)d.due_date=null;
     if(modal.mode==="edit")await sbUpd("todos",id,d);
     else await sbIns("todos",d);
-    setModal(null);fetchTodos();
+    setModal(null);onRefresh();
   }
 
   async function toggleDone(todo){
     await sbUpd("todos",todo.id,{done:!todo.done});
-    setTodos(ts=>ts.map(t=>t.id===todo.id?{...t,done:!t.done}:t));
+    onRefresh();
   }
 
   async function delTodo(id){
     if(!window.confirm("Supprimer cet élément ?"))return;
-    await sbDel("todos",id);fetchTodos();
+    await sbDel("todos",id);onRefresh();
   }
 
   const sorted=[...todos].sort((a,b)=>{
@@ -767,9 +757,8 @@ function TodoView({pilots}){
         </div>
       </div>
 
-      {loading&&<Spinner/>}
-      {!loading&&sorted.length===0&&<p style={{color:"#aaa",fontSize:13,textAlign:"center",padding:32}}>Aucun élément dans la liste. Cliquez sur + Ajouter pour commencer.</p>}
-      {!loading&&sorted.map(todo=>{
+      {sorted.length===0&&<p style={{color:"#aaa",fontSize:13,textAlign:"center",padding:32}}>Aucun élément dans la liste. Cliquez sur + Ajouter pour commencer.</p>}
+      {sorted.map(todo=>{
         const od=!todo.done&&todo.due_date&&todo.due_date<TODAY;
         return(
           <div key={todo.id} style={{background:"#fff",border:"1px solid "+(od?"#f09595":todo.done?"#d4edda":"#e0e0e0"),borderRadius:8,padding:"10px 13px",marginBottom:7,display:"flex",alignItems:"flex-start",gap:10,opacity:todo.done?0.65:1}}>
@@ -1257,7 +1246,7 @@ export default function App(){
         ))}
       </div>
 
-      {view==="todo"&&<TodoView pilots={pilots}/> }
+      {view==="todo"&&<TodoView pilots={pilots} todos={todos} onRefresh={fetchAll}/> }
       {view==="stats"&&<StatsView projects={projects} tasks={tasks} pilots={pilots} dateFrom={reportDateFrom} setDateFrom={setReportDateFrom} dateTo={reportDateTo} setDateTo={setReportDateTo}/>}
 
       {view!=="stats"&&view!=="todo"&&<>
