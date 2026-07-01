@@ -333,8 +333,8 @@ function buildChargeSVG(projects,tasks,pilots,W=700){
     const mEnd=new Date(m.getFullYear(),m.getMonth()+1,0);
     const loads={};
     pilots.forEach(p=>{
-      const pW=projects.filter(pr=>pr.pilot===p.name&&pr.status!=="Terminé"&&pr.deadline&&new Date(pr.created_at||pr.deadline)<=mEnd&&new Date(pr.deadline)>=m).reduce((s,pr)=>s+(pr.weight||0),0);
-      const tW=tasks.filter(t=>t.pilot===p.name&&t.status!=="Terminé"&&t.deadline&&new Date(t.created_at||t.deadline)<=mEnd&&new Date(t.deadline)>=m).reduce((s,t)=>s+(t.weight||0),0);
+      const pW=projects.filter(pr=>(pr.pilot===p.name||pr.pilot2===p.name)&&pr.status!=="Terminé"&&pr.deadline&&new Date(pr.created_at||pr.deadline)<=mEnd&&new Date(pr.deadline)>=m).reduce((s,pr)=>s+(pr.weight||0),0);
+      const tW=tasks.filter(t=>(t.pilot===p.name||t.pilot2===p.name)&&t.status!=="Terminé"&&t.deadline&&new Date(t.created_at||t.deadline)<=mEnd&&new Date(t.deadline)>=m).reduce((s,t)=>s+(t.weight||0),0);
       loads[p.name]=pW+tW;
     });
     return{label:m.toLocaleDateString("fr-FR",{month:"short",year:"2-digit"}),month:m,loads};
@@ -392,8 +392,8 @@ function WorkloadChart({projects,tasks,pilots}){
     const mEnd=new Date(m.getFullYear(),m.getMonth()+1,0);
     const loads={};
     pilots.forEach(p=>{
-      const pW=projects.filter(pr=>pr.pilot===p.name&&pr.status!=="Terminé"&&pr.deadline&&new Date(pr.created_at||pr.deadline)<=mEnd&&new Date(pr.deadline)>=m).reduce((s,pr)=>s+(pr.weight||0),0);
-      const tW=tasks.filter(t=>t.pilot===p.name&&t.status!=="Terminé"&&t.deadline&&new Date(t.created_at||t.deadline)<=mEnd&&new Date(t.deadline)>=m).reduce((s,t)=>s+(t.weight||0),0);
+      const pW=projects.filter(pr=>(pr.pilot===p.name||pr.pilot2===p.name)&&pr.status!=="Terminé"&&pr.deadline&&new Date(pr.created_at||pr.deadline)<=mEnd&&new Date(pr.deadline)>=m).reduce((s,pr)=>s+(pr.weight||0),0);
+      const tW=tasks.filter(t=>(t.pilot===p.name||t.pilot2===p.name)&&t.status!=="Terminé"&&t.deadline&&new Date(t.created_at||t.deadline)<=mEnd&&new Date(t.deadline)>=m).reduce((s,t)=>s+(t.weight||0),0);
       loads[p.name]=pW+tW;
     });
     return{label:m.toLocaleDateString("fr-FR",{month:"short",year:"2-digit"}),month:m,loads};
@@ -453,8 +453,8 @@ function WorkloadChart({projects,tasks,pilots}){
 
 function WorkloadTable({projects,tasks,pilots}){
   const rows=pilots.map(p=>{
-    const pW=projects.filter(x=>x.pilot===p.name&&x.status!=="Terminé").reduce((s,x)=>s+(x.weight||0),0);
-    const tW=tasks.filter(x=>x.pilot===p.name&&x.status!=="Terminé").reduce((s,x)=>s+(x.weight||0),0);
+    const pW=projects.filter(x=>(x.pilot===p.name||x.pilot2===p.name)&&x.status!=="Terminé").reduce((s,x)=>s+(x.weight||0),0);
+    const tW=tasks.filter(x=>(x.pilot===p.name||x.pilot2===p.name)&&x.status!=="Terminé").reduce((s,x)=>s+(x.weight||0),0);
     const total=pW+tW;
     const color=total>100?"#a32d2d":total>80?"#BA7517":"#27500A";
     const bgColor=total>100?"#FCEBEB":total>80?"#FAEEDA":"#EAF3DE";
@@ -546,9 +546,9 @@ function PilotCard({pilot,projects,tasks,dateFrom,dateTo}){
     if(dateTo&&d>new Date(dateTo))return false;
     return true;
   }
-  const pAll=projects.filter(p=>p.pilot===pilot&&inRange(p));
-  const tAll=tasks.filter(t=>t.pilot===pilot&&inRange(t));
-  const myTasks=tasks.filter(t=>t.pilot===pilot);
+  const pAll=projects.filter(p=>(p.pilot===pilot||p.pilot2===pilot)&&inRange(p));
+  const tAll=tasks.filter(t=>(t.pilot===pilot||t.pilot2===pilot)&&inRange(t));
+  const myTasks=tasks.filter(t=>t.pilot===pilot||t.pilot2===pilot);
   const inProgLoad=myTasks.filter(t=>t.status!=="Terminé").reduce((s,t)=>s+taskLoadInPeriod(t,pStart,pEnd),0);
   const doneLoad=myTasks.filter(t=>t.status==="Terminé").reduce((s,t)=>s+taskLoadInPeriod(t,pStart,pEnd),0);
   const delays=myTasks
@@ -845,7 +845,7 @@ export default function App(){
 
     // ── Camembert pilote (SVG inline) ──
     function pilotPieSVG(pilotName,size=100){
-      const myT=tasks.filter(t=>t.pilot===pilotName);
+      const myT=tasks.filter(t=>t.pilot===pilotName||t.pilot2===pilotName);
       const inProg=myT.filter(t=>t.status!=="Terminé").reduce((s,t)=>s+taskLoadInPeriod(t,TODAY,TODAY),0);
       const done=myT.filter(t=>t.status==="Terminé").reduce((s,t)=>s+taskLoadInPeriod(t,TODAY,TODAY),0);
       const free=Math.max(0,100-inProg-done);
@@ -868,7 +868,7 @@ export default function App(){
 
     // ── Indicateur délais ──
     function delayInfo(pilotName){
-      const d=tasks.filter(t=>t.pilot===pilotName&&t.status==="Terminé"&&t.completion_date).map(t=>taskDelay(t)).filter(v=>v!==null);
+      const d=tasks.filter(t=>(t.pilot===pilotName||t.pilot2===pilotName)&&t.status==="Terminé"&&t.completion_date).map(t=>taskDelay(t)).filter(v=>v!==null);
       if(!d.length)return{label:"Pas de donnée",value:"—",color:"#888",count:0};
       const avg=d.reduce((s,v)=>s+v,0)/d.length;
       return{
@@ -886,8 +886,8 @@ export default function App(){
       <div class="pilots-grid">
       ${pilots.map((p,pi)=>{
         const col=GCOLS[pi%GCOLS.length];
-        const myProj=projects.filter(pr=>pr.pilot===p.name);
-        const myT=tasks.filter(t=>t.pilot===p.name);
+        const myProj=projects.filter(pr=>pr.pilot===p.name||pr.pilot2===p.name);
+        const myT=tasks.filter(t=>t.pilot===p.name||t.pilot2===p.name);
         const active=myProj.filter(pr=>pr.status!=="Terminé").length;
         const tActive=myT.filter(t=>t.status!=="Terminé").length;
         const tDone=myT.filter(t=>t.status==="Terminé").length;
