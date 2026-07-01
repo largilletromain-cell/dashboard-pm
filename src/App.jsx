@@ -846,8 +846,8 @@ export default function App(){
     // ── Camembert pilote (SVG inline) ──
     function pilotPieSVG(pilotName,size=100){
       const myT=tasks.filter(t=>t.pilot===pilotName||t.pilot2===pilotName);
-      const inProg=myT.filter(t=>t.status!=="Terminé").reduce((s,t)=>s+taskLoadInPeriod(t,TODAY,TODAY),0);
-      const done=myT.filter(t=>t.status==="Terminé").reduce((s,t)=>s+taskLoadInPeriod(t,TODAY,TODAY),0);
+      const inProg=myT.filter(t=>t.status!=="Terminé").reduce((s,t)=>s+taskLoadInPeriod(t,reportDateFrom,reportDateTo),0);
+      const done=myT.filter(t=>t.status==="Terminé").reduce((s,t)=>s+taskLoadInPeriod(t,reportDateFrom,reportDateTo),0);
       const free=Math.max(0,100-inProg-done);
       const segs=[{v:inProg,c:"#378ADD"},{v:done,c:"#639922"},{v:free,c:"#e0e0e0"}];
       const r=size/2-6,cx=size/2,cy=size/2;
