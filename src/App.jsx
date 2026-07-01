@@ -1004,7 +1004,7 @@ export default function App(){
       {tModal&&<Modal title={tModal.mode==="edit"?"Modifier la tâche":"Nouvelle tâche"} onClose={()=>setTModal(null)}><TaskForm data={tModal.data} projects={projects} pilots={pilots} onSave={saveT} onClose={()=>setTModal(null)}/></Modal>}
       {gantt&&<Modal title="Gantt — cliquer ▶ pour voir les tâches" onClose={()=>setGantt(false)} wide><GanttView projects={projects} tasks={tasks}/><div style={{textAlign:"right",marginTop:12}}><button style={ss.btnS} onClick={()=>setGantt(false)}>Fermer</button></div></Modal>}
       {pilotsModal&&<Modal title="Gérer les pilotes" onClose={()=>setPilotsModal(false)}><PilotsForm pilots={pilots} onClose={()=>setPilotsModal(false)} onRefresh={fetchAll}/></Modal>}
-      {reportModal&&<ReportModal html={buildReport()} onClose={()=>setReportModal(false)} projects={projects} tasks={tasks} pilots={pilots} kpis={[{l:"Projets actifs",v:activeN},{l:"Tâches en retard",v:odN,d:odN>0},{l:"Tâches terminées",v:doneN},{l:"Avancement moyen",v:avgN+"%"}]}/>}
+      {reportModal&&<ReportModal onClose={()=>setReportModal(false)} projects={projects} tasks={tasks} pilots={pilots} kpis={[{l:"Projets actifs",v:activeN},{l:"Tâches en retard",v:odN,d:odN>0},{l:"Tâches terminées",v:doneN},{l:"Avancement moyen",v:avgN+"%"}]}/>}
 
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
         <div>
