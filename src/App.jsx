@@ -771,6 +771,7 @@ function ReportModal({onClose,projects,tasks,pilots,kpis}){
       }
 
       doc.save("bilan-"+rFrom+"-au-"+rTo+".pdf");
+      alert("Etape FINALE: save() appele, le telechargement devrait etre lance");
       setPdfState("idle");
     }catch(e){
       console.error(e);
