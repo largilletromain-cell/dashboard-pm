@@ -781,9 +781,7 @@ export default function App(){
   function buildReport(){
     const now=new Date();
     const dl=now.toLocaleDateString("fr-FR",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
-    const d2=new Date(Date.UTC(now.getFullYear(),now.getMonth(),now.getDate()));
-    d2.setUTCDate(d2.getUTCDate()+4-(d2.getUTCDay()||7));
-    const wn=Math.ceil((((d2-new Date(Date.UTC(d2.getUTCFullYear(),0,1)))/86400000)+1)/7);
+    const monthLabel=now.toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
 
     // Helpers HTML
     const badge=(label,bg,tx)=>`<span style="background:${bg};color:${tx};font-size:9px;font-weight:700;padding:2px 8px;border-radius:4px;display:inline-block">${label}</span>`;
@@ -879,11 +877,11 @@ export default function App(){
       };
     }
 
-    // ── Cards pilotes ──
+    // ── Cards pilotes — chaque card a page-break-inside:avoid ──
     const pilotsBlock=`
-    <div class="section-block">
+    <div class="section-block" style="page-break-inside:avoid">
       <div class="section-title">👥 Statistiques pilotes</div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+      <div class="pilots-grid">
       ${pilots.map((p,pi)=>{
         const col=GCOLS[pi%GCOLS.length];
         const myProj=projects.filter(pr=>pr.pilot===p.name);
@@ -896,7 +894,7 @@ export default function App(){
         const load=myT.filter(t=>t.status!=="Terminé").reduce((s,t)=>s+(t.weight||0),0);
         const loadCol=load>100?"#d9534f":load>80?"#BA7517":"#27500A";
         return`
-        <div style="background:#fff;border:1px solid #dde3f0;border-radius:8px;padding:12px;border-top:3px solid ${col}">
+        <div class="pilot-card" style="border-top:3px solid ${col}">
           <div style="font-weight:700;font-size:11px;color:${col};margin-bottom:8px;display:flex;align-items:center;gap:6px">
             <span style="background:${col};color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0">${p.name[0]}</span>
             ${p.name}
@@ -1004,21 +1002,26 @@ export default function App(){
       @page{size:A4 landscape;margin:8mm 10mm}
       @media print{
         body{background:#fff}
-        .no-break{page-break-inside:avoid}
-        .page-break{page-break-before:always}
+        .no-break{page-break-inside:avoid;break-inside:avoid}
+        .page-break{page-break-before:always;break-before:always}
+        .section-block{page-break-inside:avoid;break-inside:avoid}
+        .pilot-card{page-break-inside:avoid;break-inside:avoid}
+        .pilots-grid{break-inside:avoid}
       }
       .page{background:#fff;max-width:1020px;margin:0 auto;padding:16px 20px}
       .report-header{background:linear-gradient(135deg,#1a6bbf 0%,#0d3f7a 100%);color:#fff;border-radius:10px;padding:16px 22px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center}
       .report-title{font-size:17px;font-weight:700;margin-bottom:4px;letter-spacing:0.3px}
       .report-sub{font-size:9.5px;opacity:0.82;line-height:1.6}
-      .report-week{background:rgba(255,255,255,0.18);border-radius:8px;padding:8px 18px;text-align:center;font-size:11px;font-weight:600;border:1px solid rgba(255,255,255,0.25)}
-      .report-week span{font-size:26px;font-weight:700;display:block;line-height:1.1}
+      .report-month{background:rgba(255,255,255,0.18);border-radius:8px;padding:8px 18px;text-align:center;font-size:11px;font-weight:600;border:1px solid rgba(255,255,255,0.25);text-transform:capitalize}
+      .report-month span{font-size:20px;font-weight:700;display:block;line-height:1.3;text-transform:capitalize}
       .kpi-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:14px}
       .kpi-card{background:#fff;border:1px solid #dde3f0;border-radius:8px;padding:10px 10px 8px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,0.06)}
       .kpi-label{font-size:8px;color:#777;margin-bottom:5px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px}
       .kpi-value{font-size:24px;font-weight:700;line-height:1}
       .section-block{background:#fff;border:1px solid #dde3f0;border-radius:8px;padding:12px 14px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,0.04)}
       .section-title{font-size:11px;font-weight:700;color:#1a6bbf;margin-bottom:10px;padding-bottom:5px;border-bottom:2px solid #e8edf5;letter-spacing:0.3px}
+      .pilots-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+      .pilot-card{background:#fff;border:1px solid #dde3f0;border-radius:8px;padding:12px;page-break-inside:avoid;break-inside:avoid}
       table{width:100%;border-collapse:collapse;font-size:9.5px}
       th{padding:4px 8px;text-align:left;background:#f0f4fa;color:#444;font-weight:700;border-bottom:2px solid #dde3f0}
       td{padding:4px 8px;border-bottom:1px solid #f2f2f2;vertical-align:middle}
@@ -1028,16 +1031,16 @@ export default function App(){
     `;
 
     // ── Assemblage final ──
-    return`<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Bilan S${wn} — Physique Médicale</title><style>${css}</style></head>
+    return`<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Bilan mensuel — Physique Médicale</title><style>${css}</style></head>
     <body><div class="page">
 
       <div class="report-header">
         <div>
-          <div class="report-title">Bilan hebdomadaire — Physique Médicale</div>
+          <div class="report-title">Bilan mensuel — Physique Médicale</div>
           <div class="report-sub">Sites Galilée &amp; Bourgogne &nbsp;·&nbsp; ${dl}</div>
           <div class="report-sub" style="margin-top:3px;opacity:0.55">Document confidentiel — usage interne uniquement</div>
         </div>
-        <div class="report-week">Semaine<span>S${wn}</span></div>
+        <div class="report-month">Période<span>${monthLabel}</span></div>
       </div>
 
       ${kpiBlock}
