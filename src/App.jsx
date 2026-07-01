@@ -816,12 +816,11 @@ function ReportModal({onClose,projects,tasks,pilots,kpis}){
             <span style={{fontSize:11,color:"#888"}}>{Math.max(0,Math.round((new Date(rTo)-new Date(rFrom))/86400000))} jours couverts</span>
           </div>
           <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
-            <button onClick={()=>setStep("preview")} style={{...ss.btnS,fontSize:12,padding:"7px 16px"}}>👁 Aperçu</button>
-            <button onClick={downloadPDF} disabled={pdfState==="loading"} style={{padding:"8px 20px",fontSize:13,background:pdfState==="loading"?"#94b8d8":"#1a6bbf",color:"#fff",border:"none",borderRadius:8,cursor:pdfState==="loading"?"wait":"pointer",fontWeight:700}}>
-              {pdfState==="loading"?"⏳ Génération...":"⬇ Télécharger le PDF"}
+            <button onClick={()=>setStep("preview")} style={{padding:"8px 20px",fontSize:13,background:"#1a6bbf",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontWeight:700}}>
+              👁 Ouvrir l'aperçu complet
             </button>
           </div>
-          {pdfState==="error"&&<p style={{color:"#a32d2d",fontSize:11,marginTop:8,textAlign:"right"}}>Erreur. Essaie "Aperçu" puis Ctrl+P.</p>}
+          <p style={{fontSize:11,color:"#888",marginTop:10,textAlign:"center"}}>Dans l'aperçu : clique sur "Imprimer / Enregistrer PDF" ou fais Ctrl+P</p>
         </div>
       </div>
     </div>
