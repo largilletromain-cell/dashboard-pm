@@ -615,9 +615,7 @@ function PilotCard({pilot,projects,tasks,dateFrom,dateTo}){
   );
 }
 
-function StatsView({projects,tasks,pilots}){
-  const [dateFrom,setDateFrom]=useState(()=>{const d=new Date(TODAY);d.setMonth(d.getMonth()-3);return d.toISOString().split("T")[0];});
-  const [dateTo,setDateTo]=useState(()=>{const d=new Date(TODAY);d.setMonth(d.getMonth()+3);return d.toISOString().split("T")[0];});
+function StatsView({projects,tasks,pilots,dateFrom,setDateFrom,dateTo,setDateTo}){
   const [selPilot,setSelPilot]=useState("");
   const pilotList=selPilot?pilots.filter(p=>p.name===selPilot):pilots;
   return(
@@ -714,6 +712,8 @@ export default function App(){
   const [sortKey,setSortKey]=useState(""); const [sortDir,setSortDir]=useState("asc");
   const [pModal,setPModal]=useState(null); const [tModal,setTModal]=useState(null);
   const [gantt,setGantt]=useState(false); const [pilotsModal,setPilotsModal]=useState(false); const [reportModal,setReportModal]=useState(false);
+  const [reportDateFrom,setReportDateFrom]=useState(()=>{const d=new Date(TODAY);d.setMonth(d.getMonth()-3);return d.toISOString().split("T")[0];});
+  const [reportDateTo,setReportDateTo]=useState(()=>{const d=new Date(TODAY);d.setMonth(d.getMonth()+3);return d.toISOString().split("T")[0];});
 
   const fetchAll=useCallback(async()=>{
     setLoading(true);
@@ -781,7 +781,7 @@ export default function App(){
   function buildReport(){
     const now=new Date();
     const dl=now.toLocaleDateString("fr-FR",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
-    const monthLabel=now.toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
+    const periodLabel=fd(reportDateFrom)+" → "+fd(reportDateTo);
 
     // Helpers HTML
     const badge=(label,bg,tx)=>`<span style="background:${bg};color:${tx};font-size:9px;font-weight:700;padding:2px 8px;border-radius:4px;display:inline-block">${label}</span>`;
@@ -1012,8 +1012,8 @@ export default function App(){
       .report-header{background:linear-gradient(135deg,#1a6bbf 0%,#0d3f7a 100%);color:#fff;border-radius:10px;padding:16px 22px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center}
       .report-title{font-size:17px;font-weight:700;margin-bottom:4px;letter-spacing:0.3px}
       .report-sub{font-size:9.5px;opacity:0.82;line-height:1.6}
-      .report-month{background:rgba(255,255,255,0.18);border-radius:8px;padding:8px 18px;text-align:center;font-size:11px;font-weight:600;border:1px solid rgba(255,255,255,0.25);text-transform:capitalize}
-      .report-month span{font-size:20px;font-weight:700;display:block;line-height:1.3;text-transform:capitalize}
+      .report-month{background:rgba(255,255,255,0.18);border-radius:8px;padding:8px 16px;text-align:center;font-size:10px;font-weight:600;border:1px solid rgba(255,255,255,0.25)}
+      .report-month span{font-size:15px;font-weight:700;display:block;line-height:1.5;white-space:nowrap}
       .kpi-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:14px}
       .kpi-card{background:#fff;border:1px solid #dde3f0;border-radius:8px;padding:10px 10px 8px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,0.06)}
       .kpi-label{font-size:8px;color:#777;margin-bottom:5px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px}
@@ -1040,7 +1040,7 @@ export default function App(){
           <div class="report-sub">Sites Galilée &amp; Bourgogne &nbsp;·&nbsp; ${dl}</div>
           <div class="report-sub" style="margin-top:3px;opacity:0.55">Document confidentiel — usage interne uniquement</div>
         </div>
-        <div class="report-month">Période<span>${monthLabel}</span></div>
+        <div class="report-month">Période<span>${periodLabel}</span></div>
       </div>
 
       ${kpiBlock}
@@ -1106,7 +1106,7 @@ export default function App(){
         ))}
       </div>
 
-      {view==="stats"&&<StatsView projects={projects} tasks={tasks} pilots={pilots}/>}
+      {view==="stats"&&<StatsView projects={projects} tasks={tasks} pilots={pilots} dateFrom={reportDateFrom} setDateFrom={setReportDateFrom} dateTo={reportDateTo} setDateTo={setReportDateTo}/>}
 
       {view!=="stats"&&<>
         <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap",alignItems:"center"}}>
