@@ -790,7 +790,22 @@ function TodoView({pilots,todos,onRefresh}){
 // ═══════════════════════════════════════════════════════════════
 //  RÉUNION DE SERVICE
 // ═══════════════════════════════════════════════════════════════
-function ReunionModal({projects,tasks,todos,pilots,onClose,onRefresh}){
+function ReunionModal({onClose}){
+  // ── Données locales (indépendantes du state App) ──
+  const [projects,setProjects]=useState([]);
+  const [tasks,setTasks]=useState([]);
+  const [todos,setTodos]=useState([]);
+  const [pilots,setPilots]=useState([]);
+
+  const refreshLocal=useCallback(async()=>{
+    const [p,t,td,pl]=await Promise.all([sbGet("projects"),sbGet("tasks"),sbGet("todos"),sbGet("pilots","*&order=position")]);
+    setProjects(Array.isArray(p)?p:[]);
+    setTasks(Array.isArray(t)?t:[]);
+    setTodos(Array.isArray(td)?td:[]);
+    setPilots(Array.isArray(pl)?pl:[]);
+  },[]);
+  useEffect(()=>{refreshLocal();},[refreshLocal]);
+
   const STEP_CONFIG=0, STEP_REVIEW=1;
   const [step,setStep]=useState(STEP_CONFIG);
 
@@ -834,7 +849,8 @@ function ReunionModal({projects,tasks,todos,pilots,onClose,onRefresh}){
       pilot:npPilot||pilots[0]?.name||"",site:npSite,progress:0,
       created_at:npStart||TODAY,deadline:npDeadline||null,weight:npWeight});
     setNpName("");setNpPilot("");setNpDeadline("");setNpWeight(0);setNpStart(TODAY);
-    setShowNewProj(false); await onRefresh();
+    setShowNewProj(false);
+    await refreshLocal(); // refresh LOCAL uniquement — ne ferme pas la modale
   }
   async function addQuickTask(){
     const n=ntName.trim(); if(!n)return;
@@ -844,12 +860,14 @@ function ReunionModal({projects,tasks,todos,pilots,onClose,onRefresh}){
       created_at:ntStart||TODAY,deadline:ntDeadline||null,
       completion_date:ntEnd||null,weight:ntWeight});
     setNtName("");setNtPilot("");setNtProj("");setNtDeadline("");setNtWeight(0);
-    setNtStart(TODAY);setNtEnd("");setShowNewTask(false); await onRefresh();
+    setNtStart(TODAY);setNtEnd("");setShowNewTask(false);
+    await refreshLocal();
   }
   async function addQuickTodo(){
     const n=ndTitle.trim(); if(!n)return;
     await sbIns("todos",{title:n,assigned_to:ndAssign||"",done:false,due_date:ndDue||null});
-    setNdTitle("");setNdAssign("");setNdDue("");setShowNewTodo(false); await onRefresh();
+    setNdTitle("");setNdAssign("");setNdDue("");setShowNewTodo(false);
+    await refreshLocal();
   }
 
   async function valider(){
@@ -868,21 +886,20 @@ function ReunionModal({projects,tasks,todos,pilots,onClose,onRefresh}){
       if(note){const ex=t.notes?t.notes.trim():"";promises.push(sbUpd("todos",t.id,{notes:ex?(ex+"\n"+datePrefix+note):(datePrefix+note)}));}
     });
     await Promise.all(promises);
-    const html=buildCR();
-    await onRefresh();
-    setPdfHtml(html);
+    await refreshLocal();
+    setPdfHtml(buildCR());
     setSaving(false);
   }
 
   function buildCR(){
     const presentsStr=presents.length?presents.join(", "):"Non renseigné";
-    const dateStr=new Date(reunDate+`T12:00:00`).toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+    const dateStr=new Date(reunDate+"T12:00:00").toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
     function sBadge(s){const c=SC[s]||{bg:"#eee",tx:"#333"};return '<span style="background:'+c.bg+';color:'+c.tx+';font-size:8px;font-weight:700;padding:1px 6px;border-radius:3px">'+s+'</span>';}
     const css='*{box-sizing:border-box;margin:0;padding:0}'
-      +'body{font-family:Arial,sans-serif;font-size:10px;color:#222;background:#eef0f4}'
+      +'body{font-family:Arial,sans-serif;font-size:10px;color:#222;background:#fff}'
       +'@page{size:A4;margin:10mm 12mm}'
-      +'@media print{body{background:#fff}.nb{page-break-inside:avoid;break-inside:avoid}}'
-      +'.page{background:#fff;max-width:800px;margin:0 auto;padding:16px 20px}'
+      +'@media print{.nb{page-break-inside:avoid;break-inside:avoid}}'
+      +'.page{max-width:800px;margin:0 auto;padding:16px 20px}'
       +'.hd{background:linear-gradient(135deg,#1a6bbf,#0d3f7a);color:#fff;border-radius:10px;padding:16px 22px;margin-bottom:14px}'
       +'.hd-title{font-size:16px;font-weight:700;margin-bottom:4px}'
       +'.hd-sub{font-size:9.5px;opacity:0.85;line-height:1.7}'
@@ -892,18 +909,16 @@ function ReunionModal({projects,tasks,todos,pilots,onClose,onRefresh}){
       +'.mv{font-size:11px;font-weight:600;color:#111}'
       +'.sc{background:#fff;border:1px solid #dde3f0;border-radius:8px;padding:12px 14px;margin-bottom:10px}'
       +'.st{font-size:11px;font-weight:700;color:#1a6bbf;margin-bottom:8px;padding-bottom:5px;border-bottom:2px solid #e8edf5}'
-      +'.proj-block{margin-bottom:10px}'
       +'.proj-head{border-left:4px solid #1a6bbf;padding:6px 10px;background:#f8faff;border-radius:0 6px 6px 0;margin-bottom:4px}'
       +'.proj-name{font-weight:700;font-size:11px;color:#111;margin-bottom:2px}'
       +'.proj-meta{font-size:9px;color:#888;margin-bottom:4px}'
       +'.proj-note{font-size:9.5px;color:#333;background:#fffbee;border:1px solid #f0e68c;border-radius:4px;padding:4px 8px;white-space:pre-wrap}'
-      +'.task-item{border-left:3px solid #94a3b8;padding:5px 10px;background:#fafbff;border-radius:0 5px 5px 0;margin:3px 0 3px 14px}'
+      +'.task-item{border-left:3px solid #94a3b8;padding:5px 10px;background:#fafbff;border-radius:0 5px 5px 0;margin:3px 0 3px 16px}'
       +'.todo-item{border-left:3px solid #BA7517;padding:5px 10px;background:#fafbff;border-radius:0 5px 5px 0;margin-bottom:5px}'
       +'.item-note{font-size:9.5px;color:#333;background:#fffbee;border:1px solid #f0e68c;border-radius:4px;padding:3px 8px;margin-top:3px;white-space:pre-wrap}'
       +'.free{font-size:10px;color:#333;background:#f8f8f8;border-radius:6px;padding:10px 12px;white-space:pre-wrap;line-height:1.6}'
       +'.footer{text-align:center;font-size:8px;color:#aaa;margin-top:14px;padding-top:8px;border-top:1px solid #eee}';
 
-    // Projets avec leurs tâches imbriquées
     const projsWithContent=projects.filter(p=>{
       const hasNote=(projNotes[p.id]||"").trim();
       const hasTasks=tasks.filter(t=>t.project_id===p.id).some(t=>(taskNotes[t.id]||"").trim());
@@ -917,49 +932,37 @@ function ReunionModal({projects,tasks,todos,pilots,onClose,onRefresh}){
         +projsWithContent.map(p=>{
           const pNote=(projNotes[p.id]||"").trim();
           const pTasks=tasks.filter(t=>t.project_id===p.id&&(taskNotes[t.id]||"").trim());
-          return '<div class="proj-block nb">'
+          return '<div class="nb" style="margin-bottom:10px">'
             +'<div class="proj-head">'
             +'<div class="proj-name">'+p.name+' '+sBadge(p.status)+'</div>'
             +'<div class="proj-meta">Pilote : '+p.pilot+' · '+p.site+(p.deadline?' · Échéance : '+fd(p.deadline):'')+'</div>'
             +(pNote?'<div class="proj-note">'+datePrefix+pNote+'</div>':"")
             +'</div>'
-            +pTasks.map(t=>{
-              const tn=(taskNotes[t.id]||"").trim();
-              return '<div class="task-item">'
-                +'<div style="font-weight:600;font-size:10px;color:#333;margin-bottom:2px">'+t.name+' '+sBadge(t.status)+'</div>'
-                +'<div style="font-size:8.5px;color:#888;margin-bottom:2px">Pilote : '+t.pilot+(t.deadline?' · Éch. '+fd(t.deadline):'')+'</div>'
-                +'<div class="item-note">'+datePrefix+tn+'</div>'
-                +'</div>';
-            }).join("")
+            +pTasks.map(t=>'<div class="task-item">'
+              +'<div style="font-weight:600;font-size:10px;color:#333;margin-bottom:2px">'+t.name+' '+sBadge(t.status)+'</div>'
+              +'<div style="font-size:8.5px;color:#888;margin-bottom:2px">Pilote : '+t.pilot+(t.deadline?' · Éch. '+fd(t.deadline):'')+'</div>'
+              +'<div class="item-note">'+datePrefix+(taskNotes[t.id]||"").trim()+'</div>'
+              +'</div>').join("")
             +'</div>';
-        }).join("")
-        +'</div>'
+        }).join("")+'</div>'
       :"";
 
     const indepBlock=indepTasksWithNote.length
       ?'<div class="sc nb"><div class="st">✔ Tâches indépendantes</div>'
-        +indepTasksWithNote.map(t=>{
-          const tn=(taskNotes[t.id]||"").trim();
-          return '<div class="task-item">'
-            +'<div style="font-weight:600;font-size:10px;color:#333;margin-bottom:2px">'+t.name+' '+sBadge(t.status)+'</div>'
-            +'<div style="font-size:8.5px;color:#888;margin-bottom:2px">Pilote : '+t.pilot+(t.deadline?' · Éch. '+fd(t.deadline):'')+'</div>'
-            +'<div class="item-note">'+datePrefix+tn+'</div>'
-            +'</div>';
-        }).join("")
-        +'</div>'
+        +indepTasksWithNote.map(t=>'<div class="task-item">'
+          +'<div style="font-weight:600;font-size:10px;color:#333;margin-bottom:2px">'+t.name+' '+sBadge(t.status)+'</div>'
+          +'<div style="font-size:8.5px;color:#888;margin-bottom:2px">Pilote : '+t.pilot+(t.deadline?' · Éch. '+fd(t.deadline):'')+'</div>'
+          +'<div class="item-note">'+datePrefix+(taskNotes[t.id]||"").trim()+'</div>'
+          +'</div>').join("")+'</div>'
       :"";
 
     const todoBlock=todosWithNote.length
       ?'<div class="sc nb"><div class="st">☑ To-do list</div>'
-        +todosWithNote.map(t=>{
-          const tn=(todoNotes[t.id]||"").trim();
-          return '<div class="todo-item">'
-            +'<div style="font-weight:600;font-size:10px;color:#333;margin-bottom:2px">'+t.title+(t.done?' <span style="background:#EAF3DE;color:#27500A;font-size:8px;font-weight:700;padding:1px 5px;border-radius:3px">Fait</span>':'')+'</div>'
-            +(t.assigned_to?'<div style="font-size:8.5px;color:#888;margin-bottom:2px">Assigné à : '+t.assigned_to+'</div>':"")
-            +'<div class="item-note">'+datePrefix+tn+'</div>'
-            +'</div>';
-        }).join("")
-        +'</div>'
+        +todosWithNote.map(t=>'<div class="todo-item">'
+          +'<div style="font-weight:600;font-size:10px;color:#333;margin-bottom:2px">'+t.title+(t.done?' <span style="background:#EAF3DE;color:#27500A;font-size:8px;font-weight:700;padding:1px 5px;border-radius:3px">Fait</span>':'')+'</div>'
+          +(t.assigned_to?'<div style="font-size:8.5px;color:#888;margin-bottom:2px">Assigné à : '+t.assigned_to+'</div>':"")
+          +'<div class="item-note">'+datePrefix+(todoNotes[t.id]||"").trim()+'</div>'
+          +'</div>').join("")+'</div>'
       :"";
 
     const freeBlock=freeNotes.trim()
@@ -981,11 +984,20 @@ function ReunionModal({projects,tasks,todos,pilots,onClose,onRefresh}){
       +'</div></body></html>';
   }
 
-  // ── Aperçu PDF ──────────────────────────────────────────────
-  if(pdfHtml){
-    return(
-      <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:1001,display:"flex",alignItems:"center",justifyContent:"center",padding:12}}>
-        <div style={{background:"#fff",borderRadius:12,width:"100%",maxWidth:920,height:"93vh",display:"flex",flexDirection:"column",boxShadow:"0 8px 32px rgba(0,0,0,0.35)"}}>
+  const secStyle={background:"#fff",border:"1px solid #dde3f0",borderRadius:8,padding:"12px 14px",marginBottom:12};
+  const secTitleStyle={fontWeight:700,fontSize:12,color:"#1a6bbf",marginBottom:10,paddingBottom:5,borderBottom:"2px solid #e8edf5"};
+  const projItemStyle={background:"#f8faff",borderRadius:6,padding:"8px 10px",marginBottom:4,borderLeft:"4px solid #1a6bbf"};
+  const taskItemStyle={background:"#fafbff",borderRadius:5,padding:"6px 9px",marginBottom:5,borderLeft:"3px solid #94a3b8",marginLeft:16};
+  const todoItemStyle={background:"#fafbff",borderRadius:5,padding:"6px 9px",marginBottom:6,borderLeft:"3px solid #BA7517"};
+  const quickStyle={background:"#f0f6ff",borderRadius:6,padding:"10px 12px",border:"1px dashed #b0c8e8",marginTop:8};
+
+  // ── Rendu unique (pas de return anticipé pour garder iframeRef) ──
+  return(
+    <>
+    {/* ── Aperçu PDF (par-dessus la modale) ── */}
+    {pdfHtml&&(
+      <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:1002,display:"flex",alignItems:"center",justifyContent:"center",padding:12}}>
+        <div style={{background:"#fff",borderRadius:12,width:"100%",maxWidth:920,height:"93vh",display:"flex",flexDirection:"column",boxShadow:"0 8px 40px rgba(0,0,0,0.4)"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 16px",borderBottom:"1px solid #eee",background:"#f8f8f8",borderRadius:"12px 12px 0 0",flexShrink:0}}>
             <span style={{fontWeight:700,fontSize:14}}>📄 Compte rendu — prêt à imprimer</span>
             <div style={{display:"flex",gap:8}}>
@@ -1000,12 +1012,10 @@ function ReunionModal({projects,tasks,todos,pilots,onClose,onRefresh}){
           <iframe ref={iframeRef} srcDoc={pdfHtml} style={{flex:1,border:"none",borderRadius:"0 0 12px 12px",width:"100%"}} title="CR Réunion"/>
         </div>
       </div>
-    );
-  }
+    )}
 
-  // ── Étape 1 : configuration ──────────────────────────────────
-  if(step===STEP_CONFIG){
-    return(
+    {/* ── Étape 1 : configuration ── */}
+    {step===STEP_CONFIG&&(
       <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
         <div style={{background:"#fff",borderRadius:12,padding:24,width:"100%",maxWidth:480,boxShadow:"0 8px 32px rgba(0,0,0,0.25)"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
@@ -1036,65 +1046,75 @@ function ReunionModal({projects,tasks,todos,pilots,onClose,onRefresh}){
           </div>
         </div>
       </div>
-    );
-  }
+    )}
 
-  // ── Étape 2 : saisie des notes ───────────────────────────────
-  const secStyle={background:"#fff",border:"1px solid #dde3f0",borderRadius:8,padding:"12px 14px",marginBottom:12};
-  const secTitleStyle={fontWeight:700,fontSize:12,color:"#1a6bbf",marginBottom:10,paddingBottom:5,borderBottom:"2px solid #e8edf5"};
-  const projItemStyle={background:"#f8faff",borderRadius:6,padding:"8px 10px",marginBottom:8,borderLeft:"4px solid #1a6bbf"};
-  const taskItemStyle={background:"#fafbff",borderRadius:5,padding:"6px 9px",marginBottom:5,borderLeft:"3px solid #94a3b8",marginLeft:16};
-  const todoItemStyle={background:"#fafbff",borderRadius:5,padding:"6px 9px",marginBottom:6,borderLeft:"3px solid #BA7517"};
-  const quickStyle={background:"#f0f6ff",borderRadius:6,padding:"10px 12px",border:"1px dashed #b0c8e8",marginTop:8};
+    {/* ── Étape 2 : saisie des notes ── */}
+    {step===STEP_REVIEW&&!pdfHtml&&(
+      <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:12}}>
+        <div style={{background:"#f0f2f5",borderRadius:12,width:"100%",maxWidth:900,height:"93vh",display:"flex",flexDirection:"column",boxShadow:"0 8px 32px rgba(0,0,0,0.25)"}}>
 
-  return(
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:12}}>
-      <div style={{background:"#f0f2f5",borderRadius:12,width:"100%",maxWidth:900,height:"93vh",display:"flex",flexDirection:"column",boxShadow:"0 8px 32px rgba(0,0,0,0.25)"}}>
-
-        {/* Header */}
-        <div style={{background:"linear-gradient(135deg,#1a6bbf,#0d3f7a)",color:"#fff",borderRadius:"12px 12px 0 0",padding:"12px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
-          <div>
-            <div style={{fontWeight:700,fontSize:14}}>🗓 Réunion de service — {site}</div>
-            <div style={{fontSize:10,opacity:0.8,marginTop:2}}>{fd(reunDate)} · Présents : {presents.length?presents.join(", "):"—"}</div>
+          <div style={{background:"linear-gradient(135deg,#1a6bbf,#0d3f7a)",color:"#fff",borderRadius:"12px 12px 0 0",padding:"12px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
+            <div>
+              <div style={{fontWeight:700,fontSize:14}}>🗓 Réunion de service — {site}</div>
+              <div style={{fontSize:10,opacity:0.8,marginTop:2}}>{fd(reunDate)} · Présents : {presents.length?presents.join(", "):"—"}</div>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>setStep(STEP_CONFIG)} style={{padding:"5px 12px",fontSize:11,background:"rgba(255,255,255,0.2)",color:"#fff",border:"1px solid rgba(255,255,255,0.4)",borderRadius:6,cursor:"pointer"}}>← Modifier</button>
+              <button onClick={onClose} style={{background:"rgba(255,255,255,0.15)",border:"none",cursor:"pointer",fontSize:14,borderRadius:5,padding:"3px 10px",color:"#fff"}}>✕</button>
+            </div>
           </div>
-          <div style={{display:"flex",gap:8}}>
-            <button onClick={()=>setStep(STEP_CONFIG)} style={{padding:"5px 12px",fontSize:11,background:"rgba(255,255,255,0.2)",color:"#fff",border:"1px solid rgba(255,255,255,0.4)",borderRadius:6,cursor:"pointer"}}>← Modifier</button>
-            <button onClick={onClose} style={{background:"rgba(255,255,255,0.15)",border:"none",cursor:"pointer",fontSize:14,borderRadius:5,padding:"3px 10px",color:"#fff"}}>✕</button>
-          </div>
-        </div>
 
-        {/* Corps scrollable */}
-        <div style={{flex:1,overflowY:"auto",padding:"14px 16px"}}>
+          <div style={{flex:1,overflowY:"auto",padding:"14px 16px"}}>
 
-          {/* ── Projets + tâches imbriquées ── */}
-          <div style={secStyle}>
-            <div style={secTitleStyle}>📁 Projets & Tâches associées</div>
-            {projects.length===0&&<p style={{color:"#aaa",fontSize:11}}>Aucun projet.</p>}
-            {projects.map(p=>{
-              const pTasks=tasks.filter(t=>t.project_id===p.id);
-              return(
-                <div key={p.id} style={{marginBottom:10}}>
-                  {/* Projet */}
-                  <div style={projItemStyle}>
-                    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:5,flexWrap:"wrap"}}>
-                      <span style={{fontWeight:700,fontSize:11,flex:1}}>{p.name}</span>
-                      <Badge label={p.status} c={SC[p.status]||{bg:"#eee",tx:"#333"}}/>
-                      <Badge label={p.site} c={SIC[p.site]||{bg:"#eee",tx:"#555"}}/>
-                      <span style={{fontSize:10,color:"#888"}}>Pilote : {p.pilot}</span>
-                      {p.deadline&&<span style={{fontSize:10,color:isOD(p.deadline,p.status)?"#a32d2d":"#888"}}>Éch. {fd(p.deadline)}</span>}
+            {/* Projets + tâches imbriquées */}
+            <div style={secStyle}>
+              <div style={secTitleStyle}>📁 Projets & Tâches associées</div>
+              {projects.length===0&&<p style={{color:"#aaa",fontSize:11,marginBottom:8}}>Aucun projet.</p>}
+              {projects.map(p=>{
+                const pTasks=tasks.filter(t=>t.project_id===p.id);
+                return(
+                  <div key={p.id} style={{marginBottom:10}}>
+                    <div style={projItemStyle}>
+                      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:5,flexWrap:"wrap"}}>
+                        <span style={{fontWeight:700,fontSize:11,flex:1}}>{p.name}</span>
+                        <Badge label={p.status} c={SC[p.status]||{bg:"#eee",tx:"#333"}}/>
+                        <Badge label={p.site} c={SIC[p.site]||{bg:"#eee",tx:"#555"}}/>
+                        <span style={{fontSize:10,color:"#888"}}>Pilote : {p.pilot}</span>
+                        {p.deadline&&<span style={{fontSize:10,color:isOD(p.deadline,p.status)?"#a32d2d":"#888"}}>Éch. {fd(p.deadline)}</span>}
+                      </div>
+                      {p.notes&&<div style={{fontSize:10,color:"#666",background:"#fffbee",border:"1px solid #f0e68c",borderRadius:4,padding:"3px 7px",marginBottom:5,whiteSpace:"pre-wrap"}}>📝 {p.notes}</div>}
+                      <textarea style={{...ss.inp,height:44,resize:"vertical",fontSize:11,background:"#fff"}}
+                        placeholder={datePrefix+"note sur ce projet..."}
+                        value={projNotes[p.id]||""}
+                        onChange={e=>setProjNotes(n=>({...n,[p.id]:e.target.value}))}
+                      />
                     </div>
-                    {p.notes&&<div style={{fontSize:10,color:"#666",background:"#fffbee",border:"1px solid #f0e68c",borderRadius:4,padding:"3px 7px",marginBottom:5,whiteSpace:"pre-wrap"}}>📝 {p.notes}</div>}
-                    <textarea style={{...ss.inp,height:44,resize:"vertical",fontSize:11,background:"#fff"}}
-                      placeholder={datePrefix+"note sur ce projet..."}
-                      value={projNotes[p.id]||""}
-                      onChange={e=>setProjNotes(n=>({...n,[p.id]:e.target.value}))}
-                    />
+                    {pTasks.map(t=>(
+                      <div key={t.id} style={taskItemStyle}>
+                        <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:4,flexWrap:"wrap"}}>
+                          <span style={{fontWeight:600,fontSize:10.5,flex:1}}>↳ {t.name}</span>
+                          <Badge label={t.status} c={SC[t.status]||{bg:"#eee",tx:"#333"}}/>
+                          <span style={{fontSize:10,color:"#888"}}>Pilote : {t.pilot}</span>
+                          {t.deadline&&<span style={{fontSize:10,color:isOD(t.deadline,t.status)?"#a32d2d":"#888"}}>Éch. {fd(t.deadline)}</span>}
+                        </div>
+                        {t.notes&&<div style={{fontSize:10,color:"#666",background:"#fffbee",border:"1px solid #f0e68c",borderRadius:4,padding:"3px 7px",marginBottom:4,whiteSpace:"pre-wrap"}}>📝 {t.notes}</div>}
+                        <textarea style={{...ss.inp,height:38,resize:"vertical",fontSize:11,background:"#fff"}}
+                          placeholder={datePrefix+"note sur cette tâche..."}
+                          value={taskNotes[t.id]||""}
+                          onChange={e=>setTaskNotes(n=>({...n,[t.id]:e.target.value}))}
+                        />
+                      </div>
+                    ))}
                   </div>
-                  {/* Tâches du projet */}
-                  {pTasks.map(t=>(
+                );
+              })}
+              {tasks.filter(t=>!t.project_id).length>0&&(
+                <div style={{marginBottom:8}}>
+                  <div style={{fontSize:11,fontWeight:600,color:"#555",marginBottom:5}}>Tâches indépendantes</div>
+                  {tasks.filter(t=>!t.project_id).map(t=>(
                     <div key={t.id} style={taskItemStyle}>
                       <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:4,flexWrap:"wrap"}}>
-                        <span style={{fontWeight:600,fontSize:10.5,flex:1}}>↳ {t.name}</span>
+                        <span style={{fontWeight:600,fontSize:10.5,flex:1}}>{t.name}</span>
                         <Badge label={t.status} c={SC[t.status]||{bg:"#eee",tx:"#333"}}/>
                         <span style={{fontSize:10,color:"#888"}}>Pilote : {t.pilot}</span>
                         {t.deadline&&<span style={{fontSize:10,color:isOD(t.deadline,t.status)?"#a32d2d":"#888"}}>Éch. {fd(t.deadline)}</span>}
@@ -1108,129 +1128,103 @@ function ReunionModal({projects,tasks,todos,pilots,onClose,onRefresh}){
                     </div>
                   ))}
                 </div>
-              );
-            })}
-
-            {/* Tâches indépendantes */}
-            {tasks.filter(t=>!t.project_id).length>0&&(
-              <div style={{marginBottom:8}}>
-                <div style={{fontSize:11,fontWeight:600,color:"#555",marginBottom:5}}>Tâches indépendantes</div>
-                {tasks.filter(t=>!t.project_id).map(t=>(
-                  <div key={t.id} style={taskItemStyle}>
-                    <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:4,flexWrap:"wrap"}}>
-                      <span style={{fontWeight:600,fontSize:10.5,flex:1}}>{t.name}</span>
-                      <Badge label={t.status} c={SC[t.status]||{bg:"#eee",tx:"#333"}}/>
-                      <span style={{fontSize:10,color:"#888"}}>Pilote : {t.pilot}</span>
-                      {t.deadline&&<span style={{fontSize:10,color:isOD(t.deadline,t.status)?"#a32d2d":"#888"}}>Éch. {fd(t.deadline)}</span>}
+              )}
+              {/* Création rapide projet */}
+              <div style={quickStyle}>
+                <div style={{fontSize:10,fontWeight:600,color:"#1a6bbf",marginBottom:6,cursor:"pointer",display:"flex",alignItems:"center",gap:6}} onClick={()=>setShowNewProj(v=>!v)}>
+                  {showNewProj?"▼":"▶"} + Nouveau projet
+                </div>
+                {showNewProj&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                  <div style={{gridColumn:"1/-1"}}><input style={{...ss.inp,fontSize:11}} placeholder="Nom du projet *" value={npName} onChange={e=>setNpName(e.target.value)}/></div>
+                  <div><select style={{...ss.sel,width:"100%",fontSize:11}} value={npPilot} onChange={e=>setNpPilot(e.target.value)}><option value="">— Pilote —</option>{pilots.map(p=><option key={p.id}>{p.name}</option>)}</select></div>
+                  <div><select style={{...ss.sel,width:"100%",fontSize:11}} value={npSite} onChange={e=>setNpSite(e.target.value)}>{SITES.map(s=><option key={s}>{s}</option>)}</select></div>
+                  <div><label style={{...ss.lbl,fontSize:10}}>Date de début</label><input type="date" style={{...ss.inp,fontSize:11}} value={npStart} onChange={e=>setNpStart(e.target.value)}/></div>
+                  <div><label style={{...ss.lbl,fontSize:10}}>Échéance</label><input type="date" style={{...ss.inp,fontSize:11}} value={npDeadline} onChange={e=>setNpDeadline(e.target.value)}/></div>
+                  <div style={{gridColumn:"1/-1"}}><label style={{...ss.lbl,fontSize:10}}>Pondération : {npWeight}%</label>
+                    <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                      <input type="range" min={0} max={100} step={1} value={npWeight} onChange={e=>setNpWeight(Number(e.target.value))} style={{flex:1}}/>
+                      <input type="number" min={0} max={100} value={npWeight} onChange={e=>setNpWeight(Math.min(100,Math.max(0,Number(e.target.value))))} style={{...ss.inp,width:56,textAlign:"center",fontSize:11}}/>
                     </div>
-                    {t.notes&&<div style={{fontSize:10,color:"#666",background:"#fffbee",border:"1px solid #f0e68c",borderRadius:4,padding:"3px 7px",marginBottom:4,whiteSpace:"pre-wrap"}}>📝 {t.notes}</div>}
-                    <textarea style={{...ss.inp,height:38,resize:"vertical",fontSize:11,background:"#fff"}}
-                      placeholder={datePrefix+"note sur cette tâche..."}
-                      value={taskNotes[t.id]||""}
-                      onChange={e=>setTaskNotes(n=>({...n,[t.id]:e.target.value}))}
-                    />
                   </div>
-                ))}
+                  <div style={{gridColumn:"1/-1"}}><button style={ss.btnP} onClick={addQuickProj}>Ajouter le projet</button></div>
+                </div>}
               </div>
-            )}
-
-            {/* Création rapide projet */}
-            <div style={quickStyle}>
-              <div style={{fontSize:10,fontWeight:600,color:"#1a6bbf",marginBottom:6,cursor:"pointer",display:"flex",alignItems:"center",gap:6}} onClick={()=>setShowNewProj(v=>!v)}>
-                {showNewProj?"▼":"▶"} + Nouveau projet
-              </div>
-              {showNewProj&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
-                <div style={{gridColumn:"1/-1"}}><input style={{...ss.inp,fontSize:11}} placeholder="Nom du projet *" value={npName} onChange={e=>setNpName(e.target.value)}/></div>
-                <div><select style={{...ss.sel,width:"100%",fontSize:11}} value={npPilot} onChange={e=>setNpPilot(e.target.value)}><option value="">— Pilote —</option>{pilots.map(p=><option key={p.id}>{p.name}</option>)}</select></div>
-                <div><select style={{...ss.sel,width:"100%",fontSize:11}} value={npSite} onChange={e=>setNpSite(e.target.value)}>{SITES.map(s=><option key={s}>{s}</option>)}</select></div>
-                <div><label style={{...ss.lbl,fontSize:10}}>Date de début</label><input type="date" style={{...ss.inp,fontSize:11}} value={npStart} onChange={e=>setNpStart(e.target.value)}/></div>
-                <div><label style={{...ss.lbl,fontSize:10}}>Échéance</label><input type="date" style={{...ss.inp,fontSize:11}} value={npDeadline} onChange={e=>setNpDeadline(e.target.value)}/></div>
-                <div style={{gridColumn:"1/-1"}}><label style={{...ss.lbl,fontSize:10}}>Pondération : {npWeight}%</label>
-                  <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                    <input type="range" min={0} max={100} step={1} value={npWeight} onChange={e=>setNpWeight(Number(e.target.value))} style={{flex:1}}/>
-                    <input type="number" min={0} max={100} value={npWeight} onChange={e=>setNpWeight(Math.min(100,Math.max(0,Number(e.target.value))))} style={{...ss.inp,width:56,textAlign:"center",fontSize:11}}/>
-                  </div>
+              {/* Création rapide tâche */}
+              <div style={{...quickStyle,marginTop:6}}>
+                <div style={{fontSize:10,fontWeight:600,color:"#1a6bbf",marginBottom:6,cursor:"pointer",display:"flex",alignItems:"center",gap:6}} onClick={()=>setShowNewTask(v=>!v)}>
+                  {showNewTask?"▼":"▶"} + Nouvelle tâche
                 </div>
-                <div style={{gridColumn:"1/-1"}}><button style={ss.btnP} onClick={addQuickProj}>Ajouter le projet</button></div>
-              </div>}
+                {showNewTask&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                  <div style={{gridColumn:"1/-1"}}><input style={{...ss.inp,fontSize:11}} placeholder="Nom de la tâche *" value={ntName} onChange={e=>setNtName(e.target.value)}/></div>
+                  <div><select style={{...ss.sel,width:"100%",fontSize:11}} value={ntPilot} onChange={e=>setNtPilot(e.target.value)}><option value="">— Pilote —</option>{pilots.map(p=><option key={p.id}>{p.name}</option>)}</select></div>
+                  <div><select style={{...ss.sel,width:"100%",fontSize:11}} value={ntProj} onChange={e=>setNtProj(e.target.value)}><option value="">— Projet (opt.) —</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
+                  <div><label style={{...ss.lbl,fontSize:10}}>Date de début</label><input type="date" style={{...ss.inp,fontSize:11}} value={ntStart} onChange={e=>setNtStart(e.target.value)}/></div>
+                  <div><label style={{...ss.lbl,fontSize:10}}>Échéance</label><input type="date" style={{...ss.inp,fontSize:11}} value={ntDeadline} onChange={e=>setNtDeadline(e.target.value)}/></div>
+                  <div><label style={{...ss.lbl,fontSize:10}}>Date de fin effective</label><input type="date" style={{...ss.inp,fontSize:11}} value={ntEnd} onChange={e=>setNtEnd(e.target.value)}/></div>
+                  <div style={{gridColumn:"1/-1"}}><label style={{...ss.lbl,fontSize:10}}>Pondération : {ntWeight}%</label>
+                    <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                      <input type="range" min={0} max={100} step={1} value={ntWeight} onChange={e=>setNtWeight(Number(e.target.value))} style={{flex:1}}/>
+                      <input type="number" min={0} max={100} value={ntWeight} onChange={e=>setNtWeight(Math.min(100,Math.max(0,Number(e.target.value))))} style={{...ss.inp,width:56,textAlign:"center",fontSize:11}}/>
+                    </div>
+                  </div>
+                  <div style={{gridColumn:"1/-1"}}><button style={ss.btnP} onClick={addQuickTask}>Ajouter la tâche</button></div>
+                </div>}
+              </div>
             </div>
 
-            {/* Création rapide tâche */}
-            <div style={{...quickStyle,marginTop:6}}>
-              <div style={{fontSize:10,fontWeight:600,color:"#1a6bbf",marginBottom:6,cursor:"pointer",display:"flex",alignItems:"center",gap:6}} onClick={()=>setShowNewTask(v=>!v)}>
-                {showNewTask?"▼":"▶"} + Nouvelle tâche
-              </div>
-              {showNewTask&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
-                <div style={{gridColumn:"1/-1"}}><input style={{...ss.inp,fontSize:11}} placeholder="Nom de la tâche *" value={ntName} onChange={e=>setNtName(e.target.value)}/></div>
-                <div><select style={{...ss.sel,width:"100%",fontSize:11}} value={ntPilot} onChange={e=>setNtPilot(e.target.value)}><option value="">— Pilote —</option>{pilots.map(p=><option key={p.id}>{p.name}</option>)}</select></div>
-                <div><select style={{...ss.sel,width:"100%",fontSize:11}} value={ntProj} onChange={e=>setNtProj(e.target.value)}><option value="">— Projet (optionnel) —</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
-                <div><label style={{...ss.lbl,fontSize:10}}>Date de début</label><input type="date" style={{...ss.inp,fontSize:11}} value={ntStart} onChange={e=>setNtStart(e.target.value)}/></div>
-                <div><label style={{...ss.lbl,fontSize:10}}>Échéance</label><input type="date" style={{...ss.inp,fontSize:11}} value={ntDeadline} onChange={e=>setNtDeadline(e.target.value)}/></div>
-                <div><label style={{...ss.lbl,fontSize:10}}>Date de fin effective</label><input type="date" style={{...ss.inp,fontSize:11}} value={ntEnd} onChange={e=>setNtEnd(e.target.value)}/></div>
-                <div><label style={{...ss.lbl,fontSize:10}}>Pondération : {ntWeight}%</label>
-                  <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                    <input type="range" min={0} max={100} step={1} value={ntWeight} onChange={e=>setNtWeight(Number(e.target.value))} style={{flex:1}}/>
-                    <input type="number" min={0} max={100} value={ntWeight} onChange={e=>setNtWeight(Math.min(100,Math.max(0,Number(e.target.value))))} style={{...ss.inp,width:56,textAlign:"center",fontSize:11}}/>
+            {/* To-do list */}
+            <div style={secStyle}>
+              <div style={secTitleStyle}>☑ To-do list ({todos.length})</div>
+              {todos.length===0&&<p style={{color:"#aaa",fontSize:11}}>Aucun élément.</p>}
+              {todos.map(t=>(
+                <div key={t.id} style={{...todoItemStyle,opacity:t.done?0.65:1}}>
+                  <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:4,flexWrap:"wrap"}}>
+                    <span style={{fontWeight:600,fontSize:10.5,flex:1,textDecoration:t.done?"line-through":"none"}}>{t.title}</span>
+                    {t.assigned_to&&<span style={{background:"#e8f0fb",color:"#1a6bbf",fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:4}}>{t.assigned_to}</span>}
+                    {t.done&&<span style={{background:"#EAF3DE",color:"#27500A",fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:4}}>✓ Fait</span>}
+                    {t.due_date&&<span style={{fontSize:10,color:"#888"}}>📅 {fd(t.due_date)}</span>}
                   </div>
+                  {t.notes&&<div style={{fontSize:10,color:"#666",background:"#fffbee",border:"1px solid #f0e68c",borderRadius:4,padding:"3px 7px",marginBottom:4,whiteSpace:"pre-wrap"}}>📝 {t.notes}</div>}
+                  <textarea style={{...ss.inp,height:38,resize:"vertical",fontSize:11,background:"#fff"}}
+                    placeholder={datePrefix+"note sur cet élément..."}
+                    value={todoNotes[t.id]||""}
+                    onChange={e=>setTodoNotes(n=>({...n,[t.id]:e.target.value}))}
+                  />
                 </div>
-                <div style={{gridColumn:"1/-1"}}><button style={ss.btnP} onClick={addQuickTask}>Ajouter la tâche</button></div>
-              </div>}
+              ))}
+              <div style={{...quickStyle,marginTop:6}}>
+                <div style={{fontSize:10,fontWeight:600,color:"#1a6bbf",marginBottom:6,cursor:"pointer",display:"flex",alignItems:"center",gap:6}} onClick={()=>setShowNewTodo(v=>!v)}>
+                  {showNewTodo?"▼":"▶"} + Nouvel élément to-do
+                </div>
+                {showNewTodo&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                  <div style={{gridColumn:"1/-1"}}><input style={{...ss.inp,fontSize:11}} placeholder="Ce qu'il faut faire... *" value={ndTitle} onChange={e=>setNdTitle(e.target.value)}/></div>
+                  <div><select style={{...ss.sel,width:"100%",fontSize:11}} value={ndAssign} onChange={e=>setNdAssign(e.target.value)}><option value="">— Assigné à —</option>{pilots.map(p=><option key={p.id}>{p.name}</option>)}</select></div>
+                  <div><label style={{...ss.lbl,fontSize:10}}>Date limite</label><input type="date" style={{...ss.inp,fontSize:11}} value={ndDue} onChange={e=>setNdDue(e.target.value)}/></div>
+                  <div style={{gridColumn:"1/-1"}}><button style={ss.btnP} onClick={addQuickTodo}>Ajouter</button></div>
+                </div>}
+              </div>
             </div>
-          </div>
 
-          {/* ── To-do list ── */}
-          <div style={secStyle}>
-            <div style={secTitleStyle}>☑ To-do list ({todos.length})</div>
-            {todos.length===0&&<p style={{color:"#aaa",fontSize:11}}>Aucun élément.</p>}
-            {todos.map(t=>(
-              <div key={t.id} style={{...todoItemStyle,opacity:t.done?0.65:1}}>
-                <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:4,flexWrap:"wrap"}}>
-                  <span style={{fontWeight:600,fontSize:10.5,flex:1,textDecoration:t.done?"line-through":"none"}}>{t.title}</span>
-                  {t.assigned_to&&<span style={{background:"#e8f0fb",color:"#1a6bbf",fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:4}}>{t.assigned_to}</span>}
-                  {t.done&&<span style={{background:"#EAF3DE",color:"#27500A",fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:4}}>✓ Fait</span>}
-                  {t.due_date&&<span style={{fontSize:10,color:"#888"}}>📅 {fd(t.due_date)}</span>}
-                </div>
-                {t.notes&&<div style={{fontSize:10,color:"#666",background:"#fffbee",border:"1px solid #f0e68c",borderRadius:4,padding:"3px 7px",marginBottom:4,whiteSpace:"pre-wrap"}}>📝 {t.notes}</div>}
-                <textarea style={{...ss.inp,height:38,resize:"vertical",fontSize:11,background:"#fff"}}
-                  placeholder={datePrefix+"note sur cet élément..."}
-                  value={todoNotes[t.id]||""}
-                  onChange={e=>setTodoNotes(n=>({...n,[t.id]:e.target.value}))}
-                />
-              </div>
-            ))}
-            {/* Création rapide todo */}
-            <div style={{...quickStyle,marginTop:6}}>
-              <div style={{fontSize:10,fontWeight:600,color:"#1a6bbf",marginBottom:6,cursor:"pointer",display:"flex",alignItems:"center",gap:6}} onClick={()=>setShowNewTodo(v=>!v)}>
-                {showNewTodo?"▼":"▶"} + Nouvel élément to-do
-              </div>
-              {showNewTodo&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
-                <div style={{gridColumn:"1/-1"}}><input style={{...ss.inp,fontSize:11}} placeholder="Ce qu'il faut faire... *" value={ndTitle} onChange={e=>setNdTitle(e.target.value)}/></div>
-                <div><select style={{...ss.sel,width:"100%",fontSize:11}} value={ndAssign} onChange={e=>setNdAssign(e.target.value)}><option value="">— Assigné à —</option>{pilots.map(p=><option key={p.id}>{p.name}</option>)}</select></div>
-                <div><label style={{...ss.lbl,fontSize:10}}>Date limite</label><input type="date" style={{...ss.inp,fontSize:11}} value={ndDue} onChange={e=>setNdDue(e.target.value)}/></div>
-                <div style={{gridColumn:"1/-1"}}><button style={ss.btnP} onClick={addQuickTodo}>Ajouter</button></div>
-              </div>}
+            {/* Notes libres */}
+            <div style={secStyle}>
+              <div style={secTitleStyle}>📝 Notes libres</div>
+              <textarea style={{...ss.inp,height:100,resize:"vertical",fontSize:11}}
+                placeholder="Points divers, décisions, actions à suivre..."
+                value={freeNotes} onChange={e=>setFreeNotes(e.target.value)}
+              />
             </div>
           </div>
 
-          {/* ── Notes libres ── */}
-          <div style={secStyle}>
-            <div style={secTitleStyle}>📝 Notes libres</div>
-            <textarea style={{...ss.inp,height:100,resize:"vertical",fontSize:11}}
-              placeholder="Points divers, décisions, actions à suivre..."
-              value={freeNotes} onChange={e=>setFreeNotes(e.target.value)}
-            />
+          <div style={{padding:"10px 16px",borderTop:"1px solid #dde3f0",background:"#fff",borderRadius:"0 0 12px 12px",display:"flex",gap:8,justifyContent:"flex-end",flexShrink:0}}>
+            <button style={ss.btnS} onClick={onClose}>Annuler</button>
+            <button style={{...ss.btnP,padding:"8px 22px",fontSize:13}} onClick={valider} disabled={saving}>
+              {saving?"Enregistrement...":"✅ Valider et générer le CR"}
+            </button>
           </div>
-        </div>
-
-        {/* Footer */}
-        <div style={{padding:"10px 16px",borderTop:"1px solid #dde3f0",background:"#fff",borderRadius:"0 0 12px 12px",display:"flex",gap:8,justifyContent:"flex-end",flexShrink:0}}>
-          <button style={ss.btnS} onClick={onClose}>Annuler</button>
-          <button style={{...ss.btnP,padding:"8px 22px",fontSize:13}} onClick={valider} disabled={saving}>
-            {saving?"Enregistrement...":"✅ Valider et générer le CR"}
-          </button>
         </div>
       </div>
-    </div>
+    )}
+    </>
   );
 }
 
@@ -1665,7 +1659,7 @@ export default function App(){
       {gantt&&<Modal title="Gantt — cliquer ▶ pour voir les tâches" onClose={()=>setGantt(false)} wide><GanttView projects={projects} tasks={tasks}/><div style={{textAlign:"right",marginTop:12}}><button style={ss.btnS} onClick={()=>setGantt(false)}>Fermer</button></div></Modal>}
       {pilotsModal&&<Modal title="Gérer les pilotes" onClose={()=>setPilotsModal(false)}><PilotsForm pilots={pilots} onClose={()=>setPilotsModal(false)} onRefresh={fetchAll}/></Modal>}
       {reportModal&&<ReportModal html={buildReport()} onClose={()=>setReportModal(false)}/> }
-      {reunionModal&&<ReunionModal projects={projects} tasks={tasks} todos={todos} pilots={pilots} onClose={()=>setReunionModal(false)} onRefresh={fetchAll}/>}
+      {reunionModal&&<ReunionModal onClose={()=>{ setReunionModal(false); fetchAll(); }}/>}
 
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
         <div>
