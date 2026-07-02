@@ -786,6 +786,416 @@ function TodoView({pilots,todos,onRefresh}){
   );
 }
 
+
+// ═══════════════════════════════════════════════════════════════
+//  RÉUNION DE SERVICE
+// ═══════════════════════════════════════════════════════════════
+function ReunionModal({projects,tasks,todos,pilots,onClose,onRefresh}){
+  const STEP_CONFIG=0, STEP_REVIEW=1;
+  const [step,setStep]=useState(STEP_CONFIG);
+
+  // ── Étape 1 : configuration ──
+  const [site,setSite]=useState(SITES[0]);
+  const [reunDate,setReunDate]=useState(TODAY);
+  const [presents,setPresents]=useState([]);
+  const togglePresent=name=>setPresents(p=>p.includes(name)?p.filter(x=>x!==name):[...p,name]);
+
+  // ── Étape 2 : notes par item ──
+  const [projNotes,setProjNotes]=useState({});
+  const [taskNotes,setTaskNotes]=useState({});
+  const [todoNotes,setTodoNotes]=useState({});
+  const [freeNotes,setFreeNotes]=useState("");
+
+  // ── Création rapide ──
+  const [newProjName,setNewProjName]=useState("");
+  const [newProjPilot,setNewProjPilot]=useState("");
+  const [newTaskName,setNewTaskName]=useState("");
+  const [newTaskPilot,setNewTaskPilot]=useState("");
+  const [newTaskProj,setNewTaskProj]=useState("");
+  const [newTodoTitle,setNewTodoTitle]=useState("");
+  const [newTodoAssign,setNewTodoAssign]=useState("");
+  const [saving,setSaving]=useState(false);
+  const [pdfHtml,setPdfHtml]=useState(null);
+
+  const datePrefix=fd(reunDate)+": ";
+
+  // Projets / tâches / todos filtrés (tous sites mais on indique le site choisi)
+  const filteredProjs=projects;
+  const filteredTasks=tasks;
+  const filteredTodos=todos;
+
+  async function addQuickProj(){
+    const n=newProjName.trim();
+    if(!n)return;
+    await sbIns("projects",{name:n,status:"En cours",priority:"Moyenne",pilot:newProjPilot||pilots[0]?.name||"",site,progress:0,created_at:TODAY});
+    setNewProjName("");onRefresh();
+  }
+  async function addQuickTask(){
+    const n=newTaskName.trim();
+    if(!n)return;
+    await sbIns("tasks",{name:n,status:"En attente",priority:"Moyenne",pilot:newTaskPilot||pilots[0]?.name||"",site,project_id:newTaskProj?Number(newTaskProj):null,created_at:TODAY});
+    setNewTaskName("");onRefresh();
+  }
+  async function addQuickTodo(){
+    const n=newTodoTitle.trim();
+    if(!n)return;
+    await sbIns("todos",{title:n,assigned_to:newTodoAssign||"",done:false,due_date:null});
+    setNewTodoTitle("");onRefresh();
+  }
+
+  async function valider(){
+    setSaving(true);
+    const promises=[];
+    // Projets
+    filteredProjs.forEach(p=>{
+      const note=(projNotes[p.id]||"").trim();
+      if(note){
+        const existing=p.notes?p.notes.trim():"";
+        const merged=existing?(existing+"\n"+datePrefix+note):(datePrefix+note);
+        promises.push(sbUpd("projects",p.id,{notes:merged}));
+      }
+    });
+    // Tâches
+    filteredTasks.forEach(t=>{
+      const note=(taskNotes[t.id]||"").trim();
+      if(note){
+        const existing=t.notes?t.notes.trim():"";
+        const merged=existing?(existing+"\n"+datePrefix+note):(datePrefix+note);
+        promises.push(sbUpd("tasks",t.id,{notes:merged}));
+      }
+    });
+    // Todos
+    filteredTodos.forEach(t=>{
+      const note=(todoNotes[t.id]||"").trim();
+      if(note){
+        const existing=t.notes?t.notes.trim():"";
+        const merged=existing?(existing+"\n"+datePrefix+note):(datePrefix+note);
+        promises.push(sbUpd("todos",t.id,{notes:merged}));
+      }
+    });
+    await Promise.all(promises);
+    await onRefresh();
+    // Générer le PDF HTML
+    setPdfHtml(buildCR());
+    setSaving(false);
+  }
+
+  function buildCR(){
+    const presentsStr=presents.length?presents.join(", "):"Non renseigné";
+    const dateStr=new Date(reunDate).toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+    const css=`
+      *{box-sizing:border-box;margin:0;padding:0}
+      body{font-family:Arial,sans-serif;font-size:10px;color:#222;background:#eef0f4}
+      @page{size:A4;margin:10mm 12mm}
+      @media print{body{background:#fff}.no-break{page-break-inside:avoid;break-inside:avoid}}
+      .page{background:#fff;max-width:800px;margin:0 auto;padding:16px 20px}
+      .cr-header{background:linear-gradient(135deg,#1a6bbf,#0d3f7a);color:#fff;border-radius:10px;padding:16px 22px;margin-bottom:14px}
+      .cr-title{font-size:16px;font-weight:700;margin-bottom:4px}
+      .cr-sub{font-size:9.5px;opacity:0.85;line-height:1.7}
+      .meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+      .meta-card{background:#fff;border:1px solid #dde3f0;border-radius:8px;padding:10px 12px}
+      .meta-label{font-size:8px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:3px}
+      .meta-value{font-size:11px;font-weight:600;color:#111}
+      .section{background:#fff;border:1px solid #dde3f0;border-radius:8px;padding:12px 14px;margin-bottom:10px}
+      .section.no-break{page-break-inside:avoid;break-inside:avoid}
+      .section-title{font-size:11px;font-weight:700;color:#1a6bbf;margin-bottom:8px;padding-bottom:5px;border-bottom:2px solid #e8edf5}
+      .item{border-left:3px solid #1a6bbf;padding:6px 10px;margin-bottom:6px;background:#f8faff;border-radius:0 5px 5px 0}
+      .item-name{font-weight:700;font-size:10.5px;color:#111;margin-bottom:2px}
+      .item-meta{font-size:9px;color:#888;margin-bottom:4px}
+      .item-note{font-size:9.5px;color:#333;background:#fffbee;border:1px solid #f0e68c;border-radius:4px;padding:4px 8px;white-space:pre-wrap}
+      .free-note{font-size:10px;color:#333;background:#f8f8f8;border-radius:6px;padding:10px 12px;white-space:pre-wrap;line-height:1.6}
+      .badge{font-size:8px;font-weight:700;padding:1px 6px;border-radius:3px;display:inline-block}
+      .footer{text-align:center;font-size:8px;color:#aaa;margin-top:14px;padding-top:8px;border-top:1px solid #eee}
+    `;
+    function sBadge(s){const c=SC[s]||{bg:"#eee",tx:"#333"};return '<span class="badge" style="background:'+c.bg+';color:'+c.tx+'">'+s+'</span>';}
+
+    // Sections projets
+    const projsWithNotes=filteredProjs.filter(p=>(projNotes[p.id]||"").trim());
+    const projSection=projsWithNotes.length
+      ?'<div class="section no-break"><div class="section-title">📁 Projets ('+projsWithNotes.length+' note'+(projsWithNotes.length>1?"s":"")+')</div>'
+        +projsWithNotes.map(p=>{
+          const note=(projNotes[p.id]||"").trim();
+          return '<div class="item">'
+            +'<div class="item-name">'+p.name+' '+sBadge(p.status)+'</div>'
+            +'<div class="item-meta">Pilote : '+p.pilot+' · '+p.site+'</div>'
+            +'<div class="item-note">'+datePrefix+note+'</div>'
+            +'</div>';
+        }).join("")
+        +'</div>'
+      :"";
+
+    // Sections tâches
+    const tasksWithNotes=filteredTasks.filter(t=>(taskNotes[t.id]||"").trim());
+    const taskSection=tasksWithNotes.length
+      ?'<div class="section no-break"><div class="section-title">✔ Tâches ('+tasksWithNotes.length+' note'+(tasksWithNotes.length>1?"s":"")+')</div>'
+        +tasksWithNotes.map(t=>{
+          const note=(taskNotes[t.id]||"").trim();
+          const prj=projects.find(p=>p.id===t.project_id);
+          return '<div class="item">'
+            +'<div class="item-name">'+t.name+' '+sBadge(t.status)+'</div>'
+            +'<div class="item-meta">Pilote : '+t.pilot+(prj?' · '+prj.name:'')+'</div>'
+            +'<div class="item-note">'+datePrefix+note+'</div>'
+            +'</div>';
+        }).join("")
+        +'</div>'
+      :"";
+
+    // Sections todos
+    const todosWithNotes=filteredTodos.filter(t=>(todoNotes[t.id]||"").trim());
+    const todoSection=todosWithNotes.length
+      ?'<div class="section no-break"><div class="section-title">☑ To-do list ('+todosWithNotes.length+' note'+(todosWithNotes.length>1?"s":"")+')</div>'
+        +todosWithNotes.map(t=>{
+          const note=(todoNotes[t.id]||"").trim();
+          return '<div class="item">'
+            +'<div class="item-name">'+t.title+(t.done?' <span class="badge" style="background:#EAF3DE;color:#27500A">Fait</span>':'')+'</div>'
+            +(t.assigned_to?'<div class="item-meta">Assigné à : '+t.assigned_to+'</div>':'')
+            +'<div class="item-note">'+datePrefix+note+'</div>'
+            +'</div>';
+        }).join("")
+        +'</div>'
+      :"";
+
+    const freeSection=freeNotes.trim()
+      ?'<div class="section no-break"><div class="section-title">📝 Notes libres</div><div class="free-note">'+freeNotes.trim()+'</div></div>'
+      :"";
+
+    const noContent=!projsWithNotes.length&&!tasksWithNotes.length&&!todosWithNotes.length&&!freeNotes.trim();
+
+    return '<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>CR Réunion '+site+'</title><style>'+css+'</style></head>'
+      +'<body><div class="page">'
+      +'<div class="cr-header">'
+      +'<div class="cr-title">Compte rendu de réunion de service</div>'
+      +'<div class="cr-sub">'+site+' &nbsp;·&nbsp; '+dateStr+'</div>'
+      +'</div>'
+      +'<div class="meta-grid">'
+      +'<div class="meta-card"><div class="meta-label">Personnes présentes</div><div class="meta-value">'+presentsStr+'</div></div>'
+      +'<div class="meta-card"><div class="meta-label">Date de réunion</div><div class="meta-value">'+dateStr+'</div></div>'
+      +'</div>'
+      +(noContent?'<div class="section"><div style="color:#aaa;text-align:center;padding:20px">Aucune note saisie.</div></div>':'')
+      +projSection+taskSection+todoSection+freeSection
+      +'<div class="footer">Compte rendu généré le '+new Date().toLocaleDateString("fr-FR")+' &nbsp;·&nbsp; Physique Médicale &nbsp;·&nbsp; Confidentiel</div>'
+      +'</div></body></html>';
+  }
+
+  // ── Aperçu PDF ──────────────────────────────────────────────
+  const iframeRef=useRef(null);
+  if(pdfHtml){
+    return(
+      <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:12}}>
+        <div style={{background:"#fff",borderRadius:12,width:"100%",maxWidth:920,height:"93vh",display:"flex",flexDirection:"column",boxShadow:"0 8px 32px rgba(0,0,0,0.25)"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 16px",borderBottom:"1px solid #eee",background:"#f8f8f8",borderRadius:"12px 12px 0 0",flexShrink:0}}>
+            <span style={{fontWeight:700,fontSize:14}}>📄 Compte rendu — prêt à imprimer</span>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>iframeRef.current?.contentWindow?.print()} style={{padding:"6px 16px",fontSize:12,background:"#1a6bbf",color:"#fff",border:"none",borderRadius:6,cursor:"pointer",fontWeight:600}}>🖨 Imprimer / PDF</button>
+              <button onClick={onClose} style={{background:"#eee",border:"none",cursor:"pointer",fontSize:14,borderRadius:5,padding:"3px 10px"}}>✕</button>
+            </div>
+          </div>
+          <div style={{background:"#EAF3FB",borderBottom:"1px solid #b8d4ee",padding:"7px 16px",fontSize:11,color:"#1a4a7a",flexShrink:0}}>
+            💡 Clique sur <strong>Imprimer / PDF</strong> puis choisis <strong>Enregistrer en PDF</strong>. Format A4 portrait recommandé.
+          </div>
+          <iframe ref={iframeRef} srcDoc={pdfHtml} style={{flex:1,border:"none",borderRadius:"0 0 12px 12px",width:"100%"}} title="CR Réunion"/>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Étape 1 : configuration ──────────────────────────────────
+  if(step===STEP_CONFIG){
+    return(
+      <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+        <div style={{background:"#fff",borderRadius:12,padding:24,width:"100%",maxWidth:480,boxShadow:"0 8px 32px rgba(0,0,0,0.25)"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
+            <span style={{fontWeight:700,fontSize:15,color:"#1a6bbf"}}>🗓 Réunion de service</span>
+            <button onClick={onClose} style={{background:"#eee",border:"none",cursor:"pointer",fontSize:14,borderRadius:5,padding:"2px 9px"}}>✕</button>
+          </div>
+          <div style={{display:"grid",gap:12}}>
+            <div>
+              <label style={ss.lbl}>Centre</label>
+              <select style={ss.inp} value={site} onChange={e=>setSite(e.target.value)}>
+                {SITES.map(s=><option key={s}>{s}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={ss.lbl}>Date de réunion</label>
+              <input type="date" style={ss.inp} value={reunDate} onChange={e=>setReunDate(e.target.value)}/>
+            </div>
+            <div>
+              <label style={ss.lbl}>Personnes présentes</label>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:4}}>
+                {pilots.map(p=>(
+                  <label key={p.id} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,cursor:"pointer",padding:"4px 10px",border:"1px solid",borderColor:presents.includes(p.name)?"#1a6bbf":"#ddd",borderRadius:6,background:presents.includes(p.name)?"#e8f0fb":"#f9f9f9",userSelect:"none"}}>
+                    <input type="checkbox" checked={presents.includes(p.name)} onChange={()=>togglePresent(p.name)} style={{accentColor:"#1a6bbf"}}/>
+                    {p.name}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8,marginTop:20}}>
+            <button style={ss.btnP} onClick={()=>reunDate&&setStep(STEP_REVIEW)}>Suivant →</button>
+            <button style={ss.btnS} onClick={onClose}>Annuler</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Étape 2 : saisie des notes ───────────────────────────────
+  const sectionStyle={background:"#fff",border:"1px solid #dde3f0",borderRadius:8,padding:"12px 14px",marginBottom:12};
+  const sectionTitleStyle={fontWeight:700,fontSize:12,color:"#1a6bbf",marginBottom:10,paddingBottom:5,borderBottom:"2px solid #e8edf5"};
+  const itemStyle={background:"#f8faff",borderRadius:6,padding:"8px 10px",marginBottom:8,borderLeft:"3px solid #1a6bbf"};
+
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:12}}>
+      <div style={{background:"#f0f2f5",borderRadius:12,width:"100%",maxWidth:860,height:"93vh",display:"flex",flexDirection:"column",boxShadow:"0 8px 32px rgba(0,0,0,0.25)"}}>
+
+        {/* Header */}
+        <div style={{background:"linear-gradient(135deg,#1a6bbf,#0d3f7a)",color:"#fff",borderRadius:"12px 12px 0 0",padding:"12px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
+          <div>
+            <div style={{fontWeight:700,fontSize:14}}>🗓 Réunion de service — {site}</div>
+            <div style={{fontSize:10,opacity:0.8,marginTop:2}}>{fd(reunDate)} · Présents : {presents.length?presents.join(", "):"—"}</div>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>setStep(STEP_CONFIG)} style={{padding:"5px 12px",fontSize:11,background:"rgba(255,255,255,0.2)",color:"#fff",border:"1px solid rgba(255,255,255,0.4)",borderRadius:6,cursor:"pointer"}}>← Modifier</button>
+            <button onClick={onClose} style={{background:"rgba(255,255,255,0.15)",border:"none",cursor:"pointer",fontSize:14,borderRadius:5,padding:"3px 10px",color:"#fff"}}>✕</button>
+          </div>
+        </div>
+
+        {/* Corps scrollable */}
+        <div style={{flex:1,overflowY:"auto",padding:"14px 16px"}}>
+
+          {/* ── Projets ── */}
+          <div style={sectionStyle}>
+            <div style={sectionTitleStyle}>📁 Projets ({filteredProjs.length})</div>
+            {filteredProjs.length===0&&<p style={{color:"#aaa",fontSize:11}}>Aucun projet.</p>}
+            {filteredProjs.map(p=>(
+              <div key={p.id} style={itemStyle}>
+                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:5,flexWrap:"wrap"}}>
+                  <span style={{fontWeight:700,fontSize:11,flex:1}}>{p.name}</span>
+                  <Badge label={p.status} c={SC[p.status]||{bg:"#eee",tx:"#333"}}/>
+                  <Badge label={p.site} c={SIC[p.site]||{bg:"#eee",tx:"#555"}}/>
+                  <span style={{fontSize:10,color:"#888"}}>Pilote : {p.pilot}</span>
+                </div>
+                {p.notes&&<div style={{fontSize:10,color:"#666",background:"#fffbee",border:"1px solid #f0e68c",borderRadius:4,padding:"3px 7px",marginBottom:5,whiteSpace:"pre-wrap"}}>📝 {p.notes}</div>}
+                <textarea
+                  style={{...ss.inp,height:48,resize:"vertical",fontSize:11,background:"#fff"}}
+                  placeholder={datePrefix+"note de réunion..."}
+                  value={projNotes[p.id]||""}
+                  onChange={e=>setProjNotes(n=>({...n,[p.id]:e.target.value}))}
+                />
+              </div>
+            ))}
+            {/* Création rapide projet */}
+            <div style={{background:"#f0f6ff",borderRadius:6,padding:"8px 10px",border:"1px dashed #b0c8e8",marginTop:6}}>
+              <div style={{fontSize:10,fontWeight:600,color:"#1a6bbf",marginBottom:6}}>+ Nouveau projet</div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                <input style={{...ss.inp,flex:2,minWidth:160,height:30,fontSize:11}} placeholder="Nom du projet" value={newProjName} onChange={e=>setNewProjName(e.target.value)}/>
+                <select style={{...ss.sel,flex:1,minWidth:120,height:30,fontSize:11}} value={newProjPilot} onChange={e=>setNewProjPilot(e.target.value)}>
+                  <option value="">— Pilote —</option>{pilots.map(p=><option key={p.id}>{p.name}</option>)}
+                </select>
+                <button style={{...ss.btnP,padding:"4px 12px",fontSize:11,height:30}} onClick={addQuickProj}>Ajouter</button>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Tâches ── */}
+          <div style={sectionStyle}>
+            <div style={sectionTitleStyle}>✔ Tâches ({filteredTasks.length})</div>
+            {filteredTasks.length===0&&<p style={{color:"#aaa",fontSize:11}}>Aucune tâche.</p>}
+            {filteredTasks.map(t=>{
+              const prj=projects.find(p=>p.id===t.project_id);
+              return(
+                <div key={t.id} style={{...itemStyle,borderLeftColor:SC[t.status]?.tx||"#94a3b8"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:5,flexWrap:"wrap"}}>
+                    <span style={{fontWeight:600,fontSize:11,flex:1}}>{t.name}</span>
+                    <Badge label={t.status} c={SC[t.status]||{bg:"#eee",tx:"#333"}}/>
+                    {prj&&<span style={{fontSize:10,color:"#888"}}>📁 {prj.name}</span>}
+                    <span style={{fontSize:10,color:"#888"}}>Pilote : {t.pilot}</span>
+                  </div>
+                  {t.notes&&<div style={{fontSize:10,color:"#666",background:"#fffbee",border:"1px solid #f0e68c",borderRadius:4,padding:"3px 7px",marginBottom:5,whiteSpace:"pre-wrap"}}>📝 {t.notes}</div>}
+                  <textarea
+                    style={{...ss.inp,height:44,resize:"vertical",fontSize:11,background:"#fff"}}
+                    placeholder={datePrefix+"note de réunion..."}
+                    value={taskNotes[t.id]||""}
+                    onChange={e=>setTaskNotes(n=>({...n,[t.id]:e.target.value}))}
+                  />
+                </div>
+              );
+            })}
+            {/* Création rapide tâche */}
+            <div style={{background:"#f0f6ff",borderRadius:6,padding:"8px 10px",border:"1px dashed #b0c8e8",marginTop:6}}>
+              <div style={{fontSize:10,fontWeight:600,color:"#1a6bbf",marginBottom:6}}>+ Nouvelle tâche</div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                <input style={{...ss.inp,flex:2,minWidth:140,height:30,fontSize:11}} placeholder="Nom de la tâche" value={newTaskName} onChange={e=>setNewTaskName(e.target.value)}/>
+                <select style={{...ss.sel,flex:1,minWidth:110,height:30,fontSize:11}} value={newTaskPilot} onChange={e=>setNewTaskPilot(e.target.value)}>
+                  <option value="">— Pilote —</option>{pilots.map(p=><option key={p.id}>{p.name}</option>)}
+                </select>
+                <select style={{...ss.sel,flex:1,minWidth:110,height:30,fontSize:11}} value={newTaskProj} onChange={e=>setNewTaskProj(e.target.value)}>
+                  <option value="">— Projet —</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+                <button style={{...ss.btnP,padding:"4px 12px",fontSize:11,height:30}} onClick={addQuickTask}>Ajouter</button>
+              </div>
+            </div>
+          </div>
+
+          {/* ── To-do list ── */}
+          <div style={sectionStyle}>
+            <div style={sectionTitleStyle}>☑ To-do list ({filteredTodos.length})</div>
+            {filteredTodos.length===0&&<p style={{color:"#aaa",fontSize:11}}>Aucun élément.</p>}
+            {filteredTodos.map(t=>(
+              <div key={t.id} style={{...itemStyle,borderLeftColor:t.done?"#639922":"#BA7517",opacity:t.done?0.65:1}}>
+                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:5,flexWrap:"wrap"}}>
+                  <span style={{fontWeight:600,fontSize:11,flex:1,textDecoration:t.done?"line-through":"none"}}>{t.title}</span>
+                  {t.assigned_to&&<span style={{background:"#e8f0fb",color:"#1a6bbf",fontSize:9,fontWeight:700,padding:"1px 6px",borderRadius:4}}>{t.assigned_to}</span>}
+                  {t.done&&<span style={{background:"#EAF3DE",color:"#27500A",fontSize:9,fontWeight:700,padding:"1px 6px",borderRadius:4}}>✓ Fait</span>}
+                  {t.due_date&&<span style={{fontSize:10,color:"#888"}}>📅 {fd(t.due_date)}</span>}
+                </div>
+                {t.notes&&<div style={{fontSize:10,color:"#666",background:"#fffbee",border:"1px solid #f0e68c",borderRadius:4,padding:"3px 7px",marginBottom:5,whiteSpace:"pre-wrap"}}>📝 {t.notes}</div>}
+                <textarea
+                  style={{...ss.inp,height:44,resize:"vertical",fontSize:11,background:"#fff"}}
+                  placeholder={datePrefix+"note de réunion..."}
+                  value={todoNotes[t.id]||""}
+                  onChange={e=>setTodoNotes(n=>({...n,[t.id]:e.target.value}))}
+                />
+              </div>
+            ))}
+            {/* Création rapide todo */}
+            <div style={{background:"#f0f6ff",borderRadius:6,padding:"8px 10px",border:"1px dashed #b0c8e8",marginTop:6}}>
+              <div style={{fontSize:10,fontWeight:600,color:"#1a6bbf",marginBottom:6}}>+ Nouvel élément to-do</div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                <input style={{...ss.inp,flex:2,minWidth:160,height:30,fontSize:11}} placeholder="Ce qu'il faut faire..." value={newTodoTitle} onChange={e=>setNewTodoTitle(e.target.value)}/>
+                <select style={{...ss.sel,flex:1,minWidth:110,height:30,fontSize:11}} value={newTodoAssign} onChange={e=>setNewTodoAssign(e.target.value)}>
+                  <option value="">— Assigné à —</option>{pilots.map(p=><option key={p.id}>{p.name}</option>)}
+                </select>
+                <button style={{...ss.btnP,padding:"4px 12px",fontSize:11,height:30}} onClick={addQuickTodo}>Ajouter</button>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Notes libres ── */}
+          <div style={sectionStyle}>
+            <div style={sectionTitleStyle}>📝 Notes libres</div>
+            <textarea
+              style={{...ss.inp,height:100,resize:"vertical",fontSize:11}}
+              placeholder="Points divers, décisions, actions à suivre..."
+              value={freeNotes}
+              onChange={e=>setFreeNotes(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {/* Footer bouton valider */}
+        <div style={{padding:"10px 16px",borderTop:"1px solid #dde3f0",background:"#fff",borderRadius:"0 0 12px 12px",display:"flex",gap:8,justifyContent:"flex-end",flexShrink:0}}>
+          <button style={ss.btnS} onClick={onClose}>Annuler</button>
+          <button style={{...ss.btnP,padding:"8px 22px",fontSize:13}} onClick={valider} disabled={saving}>
+            {saving?"Enregistrement...":"✅ Valider et générer le CR"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function applySort(items,key,dir){
   if(!key)return items;
   if(key==="site"){
@@ -820,7 +1230,7 @@ export default function App(){
   const [fTPrj,setFTPrj]=useState(""); const [fTSt,setFTSt]=useState(""); const [fTSite,setFTSite]=useState("");
   const [sortKey,setSortKey]=useState(""); const [sortDir,setSortDir]=useState("asc");
   const [pModal,setPModal]=useState(null); const [tModal,setTModal]=useState(null);
-  const [gantt,setGantt]=useState(false); const [pilotsModal,setPilotsModal]=useState(false); const [reportModal,setReportModal]=useState(false);
+  const [gantt,setGantt]=useState(false); const [pilotsModal,setPilotsModal]=useState(false); const [reportModal,setReportModal]=useState(false); const [reunionModal,setReunionModal]=useState(false);
   const [reportDateFrom,setReportDateFrom]=useState(()=>{const d=new Date(TODAY);d.setMonth(d.getMonth()-3);return d.toISOString().split("T")[0];});
   const [reportDateTo,setReportDateTo]=useState(()=>{const d=new Date(TODAY);d.setMonth(d.getMonth()+3);return d.toISOString().split("T")[0];});
 
@@ -1216,7 +1626,8 @@ export default function App(){
       {tModal&&<Modal title={tModal.mode==="edit"?"Modifier la tâche":"Nouvelle tâche"} onClose={()=>setTModal(null)}><TaskForm data={tModal.data} projects={projects} pilots={pilots} onSave={saveT} onClose={()=>setTModal(null)}/></Modal>}
       {gantt&&<Modal title="Gantt — cliquer ▶ pour voir les tâches" onClose={()=>setGantt(false)} wide><GanttView projects={projects} tasks={tasks}/><div style={{textAlign:"right",marginTop:12}}><button style={ss.btnS} onClick={()=>setGantt(false)}>Fermer</button></div></Modal>}
       {pilotsModal&&<Modal title="Gérer les pilotes" onClose={()=>setPilotsModal(false)}><PilotsForm pilots={pilots} onClose={()=>setPilotsModal(false)} onRefresh={fetchAll}/></Modal>}
-      {reportModal&&<ReportModal html={buildReport()} onClose={()=>setReportModal(false)}/>}
+      {reportModal&&<ReportModal html={buildReport()} onClose={()=>setReportModal(false)}/> }
+      {reunionModal&&<ReunionModal projects={projects} tasks={tasks} todos={todos} pilots={pilots} onClose={()=>setReunionModal(false)} onRefresh={fetchAll}/>}
 
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
         <div>
@@ -1227,6 +1638,7 @@ export default function App(){
           <button style={ss.btnS} onClick={fetchAll}>↻</button>
           <button style={ss.btnS} onClick={()=>setPilotsModal(true)}>👥 Pilotes</button>
           <button style={ss.btnS} onClick={()=>setGantt(true)}>Gantt</button>
+          <button style={{...ss.btnS,background:"#1D9E75",color:"#fff",border:"none"}} onClick={()=>setReunionModal(true)}>🗓 Réunion de service</button>
           <button style={ss.btnP} onClick={()=>setReportModal(true)}>Bilan PDF</button>
         </div>
       </div>
