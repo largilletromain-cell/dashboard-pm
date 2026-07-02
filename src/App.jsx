@@ -146,7 +146,7 @@ function TaskForm({data,projects,pilots,onSave,onClose}){
   );
 }
 
-function PilotsForm({pilots,onClose,onRefresh}){
+function PilotsForm({pilots,sites:sitesProp,onClose,onRefresh}){
   const [tab,setTab]=useState("pilots"); // "pilots" | "sites"
   // ── Pilotes ──
   const [pilotList,setPilotList]=useState([...pilots]);
@@ -173,25 +173,35 @@ function PilotsForm({pilots,onClose,onRefresh}){
     setEditingPilot(null);setEditPilotVal("");
   }
 
-  // ── Centres ──
-  const [siteList,setSiteList]=useState([...SITES]);
+  // ── Centres (Supabase) ──
+  const [rawSites,setRawSites]=useState([]);
   const [newSiteName,setNewSiteName]=useState("");
-  const [editingSite,setEditingSite]=useState(null);
+  const [editingSite,setEditingSite]=useState(null); // {id, name}
   const [editSiteVal,setEditSiteVal]=useState("");
 
-  // Note : les centres sont stockés en mémoire locale uniquement (constante SITES)
-  // Pour une vraie persistance, il faudrait une table Supabase dédiée
-  function addSite(){
+  useEffect(()=>{
+    sbGet("sites","*&order=position").then(r=>{
+      if(Array.isArray(r))setRawSites(r);
+      else setRawSites((sitesProp||SITES).map((n,i)=>({id:null,name:n,position:i})));
+    });
+  },[]);
+
+  async function addSite(){
     const n=newSiteName.trim();
-    if(!n||siteList.includes(n))return;
-    setSiteList(l=>[...l,n]);
+    if(!n||rawSites.find(s=>s.name===n))return;
+    const r=await sbIns("sites",{name:n,position:rawSites.length});
+    if(r&&r[0])setRawSites(l=>[...l,r[0]]);
     setNewSiteName("");
   }
-  function removeSite(s){setSiteList(l=>l.filter(x=>x!==s));}
-  function saveSiteEdit(){
+  async function removeSite(s){
+    if(s.id)await sbDel("sites",s.id);
+    setRawSites(l=>l.filter(x=>x.id!==s.id));
+  }
+  async function saveSiteEdit(){
     const n=editSiteVal.trim();
     if(!n||!editingSite)return;
-    setSiteList(l=>l.map(s=>s===editingSite?n:s));
+    if(editingSite.id)await sbUpd("sites",editingSite.id,{name:n});
+    setRawSites(l=>l.map(s=>s.id===editingSite.id?{...s,name:n}:s));
     setEditingSite(null);setEditSiteVal("");
   }
 
@@ -235,19 +245,16 @@ function PilotsForm({pilots,onClose,onRefresh}){
 
       {/* ── Onglet Centres ── */}
       {tab==="sites"&&<div>
-        <div style={{background:"#fff8e1",border:"1px solid #ffe082",borderRadius:6,padding:"6px 10px",fontSize:11,color:"#7a6000",marginBottom:10}}>
-          ⚠ Les centres sont modifiés localement. Pour une persistance complète, une table Supabase est recommandée.
-        </div>
         <div style={{marginBottom:12}}>
-          {siteList.map((s,i)=>(
-            <div key={s} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",background:i%2===0?"#f9f9f9":"#fff",borderRadius:6,marginBottom:4}}>
-              {editingSite===s
+          {rawSites.map((s,i)=>(
+            <div key={s.id||s.name} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",background:i%2===0?"#f9f9f9":"#fff",borderRadius:6,marginBottom:4}}>
+              {editingSite?.id===s.id
                 ?<><input style={{...ss.inp,flex:1,height:28,fontSize:12}} value={editSiteVal} onChange={e=>setEditSiteVal(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveSiteEdit()} autoFocus/>
                   <button onClick={saveSiteEdit} style={{...ss.btnP,padding:"2px 9px",fontSize:11}}>✓</button>
                   <button onClick={()=>{setEditingSite(null);setEditSiteVal("");}} style={{...ss.btnS,padding:"2px 7px",fontSize:11}}>✕</button>
                 </>
-                :<><span style={{flex:1,fontSize:13}}>{s}</span>
-                  <button onClick={()=>{setEditingSite(s);setEditSiteVal(s);}} style={{...ss.btnS,padding:"2px 7px",fontSize:11}}>✏</button>
+                :<><span style={{flex:1,fontSize:13}}>{s.name}</span>
+                  <button onClick={()=>{setEditingSite(s);setEditSiteVal(s.name);}} style={{...ss.btnS,padding:"2px 7px",fontSize:11}}>✏</button>
                   <button onClick={()=>removeSite(s)} style={{...ss.btnD,padding:"2px 7px",fontSize:11}}>✕</button>
                 </>
               }
@@ -634,7 +641,7 @@ function PieChart({inProgress,completed,size=130}){
   );
 }
 
-function PilotCard({pilot,projects,tasks,dateFrom,dateTo}){
+function PilotCard({pilot,projects,tasks,todos,dateFrom,dateTo}){
   const pStart=dateFrom||TODAY, pEnd=dateTo||TODAY;
   function inRange(item){
     if(!dateFrom&&!dateTo)return true;
@@ -646,6 +653,15 @@ function PilotCard({pilot,projects,tasks,dateFrom,dateTo}){
   }
   const pAll=projects.filter(p=>(p.pilot===pilot||p.pilot2===pilot)&&inRange(p));
   const tAll=tasks.filter(t=>(t.pilot===pilot||t.pilot2===pilot)&&inRange(t));
+  const tdAll=(todos||[]).filter(td=>{
+    if(td.assigned_to!==pilot)return false;
+    if(!dateFrom&&!dateTo)return true;
+    const raw=td.due_date; if(!raw)return true;
+    const d=new Date(raw);
+    if(dateFrom&&d<new Date(dateFrom))return false;
+    if(dateTo&&d>new Date(dateTo))return false;
+    return true;
+  });
   const myTasks=tasks.filter(t=>t.pilot===pilot||t.pilot2===pilot);
   const inProgLoad=myTasks.filter(t=>t.status!=="Terminé").reduce((s,t)=>s+taskLoadInPeriod(t,pStart,pEnd),0);
   const doneLoad=myTasks.filter(t=>t.status==="Terminé").reduce((s,t)=>s+taskLoadInPeriod(t,pStart,pEnd),0);
@@ -677,8 +693,8 @@ function PilotCard({pilot,projects,tasks,dateFrom,dateTo}){
           <div style={{fontSize:10,color:"#999",marginTop:4}}>{delays.length} tâche{delays.length>1?"s":""} terminée{delays.length>1?"s":""} avec date de fin renseignée</div>
         </div>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:10}}>
-        {[{l:"Projets en cours",v:pAll.filter(p=>p.status!=="Terminé").length,blue:true},{l:"Projets terminés",v:pAll.filter(p=>p.status==="Terminé").length},{l:"Tâches en cours",v:tAll.filter(t=>t.status!=="Terminé").length,blue:true},{l:"Tâches terminées",v:tAll.filter(t=>t.status==="Terminé").length}].map(k=>(
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:10}}>
+        {[{l:"Projets en cours",v:pAll.filter(p=>p.status!=="Terminé").length,blue:true},{l:"Tâches en cours",v:tAll.filter(t=>t.status!=="Terminé").length,blue:true},{l:"To-do en attente",v:tdAll.filter(t=>!t.done).length,blue:true},{l:"Projets terminés",v:pAll.filter(p=>p.status==="Terminé").length},{l:"Tâches terminées",v:tAll.filter(t=>t.status==="Terminé").length},{l:"To-do terminés",v:tdAll.filter(t=>t.done).length}].map(k=>(
           <div key={k.l} style={{background:k.blue?"#f0f6ff":"#eaf3de",borderRadius:7,padding:"8px 10px",textAlign:"center"}}>
             <div style={{fontSize:10,color:"#555",marginBottom:2}}>{k.l}</div>
             <div style={{fontSize:20,fontWeight:700,color:k.blue?"#1a6bbf":"#27500A"}}>{k.v}</div>
@@ -710,12 +726,27 @@ function PilotCard({pilot,projects,tasks,dateFrom,dateTo}){
           </div>
         );})}
       </div>}
-      {!pAll.length&&!tAll.length&&<p style={{fontSize:11,color:"#aaa",margin:0}}>Aucune activité sur cette période.</p>}
+      {tdAll.length>0&&<div style={{marginTop:8}}>
+        <div style={{fontWeight:600,fontSize:11,color:"#BA7517",marginBottom:4}}>To-do list :</div>
+        {tdAll.map(td=>(
+          <div key={td.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 8px",background:td.done?"#f3fbee":"#fffbee",borderRadius:5,marginBottom:3,fontSize:11,opacity:td.done?0.7:1}}>
+            <span style={{fontWeight:500,textDecoration:td.done?"line-through":"none"}}>{td.title}</span>
+            <div style={{display:"flex",gap:5,flexShrink:0}}>
+              {td.done
+                ?<span style={{background:"#EAF3DE",color:"#27500A",fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:3}}>✓ Fait</span>
+                :<span style={{background:"#FAEEDA",color:"#633806",fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:3}}>En attente</span>
+              }
+              {td.due_date&&<span style={{fontSize:10,color:(!td.done&&td.due_date<TODAY)?"#a32d2d":"#888"}}>{fd(td.due_date)}{(!td.done&&td.due_date<TODAY)?" (!!)":""}</span>}
+            </div>
+          </div>
+        ))}
+      </div>}
+      {!pAll.length&&!tAll.length&&!tdAll.length&&<p style={{fontSize:11,color:"#aaa",margin:0}}>Aucune activité sur cette période.</p>}
     </div>
   );
 }
 
-function StatsView({projects,tasks,pilots,dateFrom,setDateFrom,dateTo,setDateTo}){
+function StatsView({projects,tasks,pilots,todos,dateFrom,setDateFrom,dateTo,setDateTo}){
   const [selPilot,setSelPilot]=useState("");
   const pilotList=selPilot?pilots.filter(p=>p.name===selPilot):pilots;
   return(
@@ -735,7 +766,7 @@ function StatsView({projects,tasks,pilots,dateFrom,setDateFrom,dateTo,setDateTo}
       </div>
       <WorkloadChart projects={projects} tasks={tasks} pilots={pilotList}/>
       <WorkloadTable projects={projects} tasks={tasks} pilots={pilotList}/>
-      {pilotList.map(p=><PilotCard key={p.id} pilot={p.name} projects={projects} tasks={tasks} dateFrom={dateFrom} dateTo={dateTo}/>)}
+      {pilotList.map(p=><PilotCard key={p.id} pilot={p.name} projects={projects} tasks={tasks} todos={todos||[]} dateFrom={dateFrom} dateTo={dateTo}/>)}
     </div>
   );
 }
@@ -1391,6 +1422,7 @@ export default function App(){
   const [tasks,setTasks]=useState([]);
   const [pilots,setPilots]=useState([]);
   const [todos,setTodos]=useState([]);
+  const [sites,setSites]=useState(SITES);
   const [loading,setLoading]=useState(true);
   const [view,setView]=useState("projects");
   const [fSt,setFSt]=useState(""); const [fPil,setFPil]=useState(""); const [fSite,setFSite]=useState("");
@@ -1403,14 +1435,14 @@ export default function App(){
 
   const fetchAll=useCallback(async()=>{
     setLoading(true);
-    const [p,t,pl,td]=await Promise.all([sbGet("projects"),sbGet("tasks"),sbGet("pilots","*&order=position"),sbGet("todos")]);
-    setProjects(Array.isArray(p)?p:[]); setTasks(Array.isArray(t)?t:[]); setPilots(Array.isArray(pl)?pl:[]); setTodos(Array.isArray(td)?td:[]);
+    const [p,t,pl,td,si]=await Promise.all([sbGet("projects"),sbGet("tasks"),sbGet("pilots","*&order=position"),sbGet("todos"),sbGet("sites","*&order=position")]);
+    setProjects(Array.isArray(p)?p:[]); setTasks(Array.isArray(t)?t:[]); setPilots(Array.isArray(pl)?pl:[]); setTodos(Array.isArray(td)?td:[]); setSites(Array.isArray(si)&&si.length?si.map(s=>s.name):SITES);
     setLoading(false);
   },[]);
   useEffect(()=>{fetchAll();},[fetchAll]);
 
-  const EP={name:"",status:"En cours",priority:"Moyenne",deadline:"",progress:0,pilot:pilots[0]?.name||"",pilot2:"",site:SITES[0],description:"",notes:"",weight:0,created_at:TODAY};
-  const ET={project_id:null,name:"",status:"En attente",priority:"Moyenne",pilot:pilots[0]?.name||"",pilot2:"",site:SITES[0],deadline:"",notes:"",weight:0,created_at:TODAY,completion_date:""};
+  const EP={name:"",status:"En cours",priority:"Moyenne",deadline:"",progress:0,pilot:pilots[0]?.name||"",pilot2:"",site:sites[0]||SITES[0],description:"",notes:"",weight:0,created_at:TODAY};
+  const ET={project_id:null,name:"",status:"En attente",priority:"Moyenne",pilot:pilots[0]?.name||"",pilot2:"",site:sites[0]||SITES[0],deadline:"",notes:"",weight:0,created_at:TODAY,completion_date:""};
 
   async function saveP(f){
     const{id,...d}=f;
@@ -1795,7 +1827,7 @@ export default function App(){
       {pModal&&<Modal title={pModal.mode==="edit"?"Modifier le projet":"Nouveau projet"} onClose={()=>setPModal(null)}><ProjForm data={pModal.data} pilots={pilots} tasks={tasks} onSave={saveP} onClose={()=>setPModal(null)}/></Modal>}
       {tModal&&<Modal title={tModal.mode==="edit"?"Modifier la tâche":"Nouvelle tâche"} onClose={()=>setTModal(null)}><TaskForm data={tModal.data} projects={projects} pilots={pilots} onSave={saveT} onClose={()=>setTModal(null)}/></Modal>}
       {gantt&&<Modal title="Gantt — cliquer ▶ pour voir les tâches" onClose={()=>setGantt(false)} wide><GanttView projects={projects} tasks={tasks}/><div style={{textAlign:"right",marginTop:12}}><button style={ss.btnS} onClick={()=>setGantt(false)}>Fermer</button></div></Modal>}
-      {pilotsModal&&<Modal title="Gérer les pilotes & centres" onClose={()=>setPilotsModal(false)} wide={false}><PilotsForm pilots={pilots} onClose={()=>setPilotsModal(false)} onRefresh={fetchAll}/></Modal>}
+      {pilotsModal&&<Modal title="Gérer les pilotes & centres" onClose={()=>setPilotsModal(false)} wide={false}><PilotsForm pilots={pilots} sites={sites} onClose={()=>setPilotsModal(false)} onRefresh={fetchAll}/></Modal>}
       {reportModal&&<ReportModal html={buildReport()} onClose={()=>setReportModal(false)}/> }
       {reunionModal&&<ReunionModal onClose={()=>{ setReunionModal(false); fetchAll(); }}/>}
 
@@ -1832,7 +1864,7 @@ export default function App(){
       </div>
 
       {view==="todo"&&<TodoView pilots={pilots} todos={todos} onRefresh={fetchAll}/> }
-      {view==="stats"&&<StatsView projects={projects} tasks={tasks} pilots={pilots} dateFrom={reportDateFrom} setDateFrom={setReportDateFrom} dateTo={reportDateTo} setDateTo={setReportDateTo}/>}
+      {view==="stats"&&<StatsView projects={projects} tasks={tasks} pilots={pilots} todos={todos} dateFrom={reportDateFrom} setDateFrom={setReportDateFrom} dateTo={reportDateTo} setDateTo={setReportDateTo}/>}
 
       {view!=="stats"&&view!=="todo"&&<>
         <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap",alignItems:"center"}}>
