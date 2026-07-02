@@ -1714,28 +1714,42 @@ export default function App(){
     </div>`:"";
 
 
-    // ── To-do list ──
-    const pendingTodos=todos.filter(t=>!t.done);
-    const doneTodos=todos.filter(t=>t.done);
+    // ── To-do list filtrée sur la période ──
+    function todoInPeriod(t){
+      if(!t.due_date)return true;
+      if(reportDateFrom&&t.due_date<reportDateFrom)return false;
+      if(reportDateTo&&t.due_date>reportDateTo)return false;
+      return true;
+    }
+    const todosInPeriod=[...todos].filter(todoInPeriod);
+    const pendingTodos=todosInPeriod.filter(t=>!t.done);
+    const doneTodos=todosInPeriod.filter(t=>t.done);
+
     function buildTodoRow(t){
       const od=!t.done&&t.due_date&&t.due_date<TODAY;
       const badgeDone='<span style="background:#EAF3DE;color:#27500A;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px">&#10003; Fait</span>';
-      const badgePending='<span style="background:#E6F1FB;color:#0C447C;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px">En attente</span>';
+      const badgePending='<span style="background:#FAEEDA;color:#633806;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px">En attente</span>';
+      const badgeOverdue='<span style="background:#FCEBEB;color:#791F1F;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px">&#9888; En retard</span>';
       return '<tr style="opacity:'+(t.done?0.6:1)+'">'
         +'<td style="text-align:center;font-size:14px">'+(t.done?"&#9745;":"&#9744;")+'</td>'
         +'<td style="font-weight:'+(t.done?"400":"600")+';text-decoration:'+(t.done?"line-through":"none")+';color:'+(t.done?"#aaa":"#111")+'">'+t.title+'</td>'
         +'<td>'+(t.assigned_to||"—")+'</td>'
-        +'<td style="'+(od?"color:#d9534f;font-weight:700":"")+'">'+(t.due_date?fd(t.due_date):"—")+(od?" &#9888;":"")+'</td>'
-        +'<td>'+(t.done?badgeDone:badgePending)+'</td>'
+        +'<td style="'+(od?"color:#d9534f;font-weight:700":"")+'">'+(t.due_date?fd(t.due_date):"—")+'</td>'
+        +'<td>'+(t.done?badgeDone:od?badgeOverdue:badgePending)+'</td>'
         +'</tr>';
     }
-    const todoRows=[...todos].sort((a,b)=>{
+
+    const todoRows=[...todosInPeriod].sort((a,b)=>{
       if(a.done!==b.done)return a.done?1:-1;
+      const aOD=!a.done&&a.due_date&&a.due_date<TODAY;
+      const bOD=!b.done&&b.due_date&&b.due_date<TODAY;
+      if(aOD!==bOD)return aOD?-1:1;
       return (a.due_date||"9999")<(b.due_date||"9999")?-1:1;
     }).map(t=>buildTodoRow(t)).join("");
-    const todoBlock=todos.length
+
+    const todoBlock=todosInPeriod.length
       ?'<div class="section-block no-break">'
-        +'<div class="section-title">&#10003; To-do list ('+pendingTodos.length+' en attente &middot; '+doneTodos.length+' fait'+(doneTodos.length>1?"s":"")+')</div>'
+        +'<div class="section-title">&#10003; To-do list &mdash; p&eacute;riode '+fd(reportDateFrom)+' &rarr; '+fd(reportDateTo)+' ('+pendingTodos.length+' en attente &middot; '+doneTodos.length+' fait'+(doneTodos.length>1?"s":"")+')</div>'
         +'<table>'
         +'<thead><tr><th style="width:30px"></th><th>Intitul&eacute;</th><th>Assign&eacute; &agrave;</th><th>Date limite</th><th>Statut</th></tr></thead>'
         +'<tbody>'+todoRows+'</tbody>'
