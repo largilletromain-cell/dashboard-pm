@@ -147,22 +147,119 @@ function TaskForm({data,projects,pilots,onSave,onClose}){
 }
 
 function PilotsForm({pilots,onClose,onRefresh}){
-  const [list,setList]=useState([...pilots]);
-  const [newName,setNewName]=useState("");
-  async function add(){const n=newName.trim();if(!n||list.find(p=>p.name===n))return;const r=await sbIns("pilots",{name:n,position:list.length});if(r&&r[0])setList(l=>[...l,r[0]]);setNewName("");}
-  async function remove(p){await sbDel("pilots",p.id);setList(l=>l.filter(x=>x.id!==p.id));}
+  const [tab,setTab]=useState("pilots"); // "pilots" | "sites"
+  // ── Pilotes ──
+  const [pilotList,setPilotList]=useState([...pilots]);
+  const [newPilotName,setNewPilotName]=useState("");
+  const [editingPilot,setEditingPilot]=useState(null); // {id, name}
+  const [editPilotVal,setEditPilotVal]=useState("");
+
+  async function addPilot(){
+    const n=newPilotName.trim();
+    if(!n||pilotList.find(p=>p.name===n))return;
+    const r=await sbIns("pilots",{name:n,position:pilotList.length});
+    if(r&&r[0])setPilotList(l=>[...l,r[0]]);
+    setNewPilotName("");
+  }
+  async function removePilot(p){
+    await sbDel("pilots",p.id);
+    setPilotList(l=>l.filter(x=>x.id!==p.id));
+  }
+  async function savePilotEdit(){
+    const n=editPilotVal.trim();
+    if(!n||!editingPilot)return;
+    await sbUpd("pilots",editingPilot.id,{name:n});
+    setPilotList(l=>l.map(p=>p.id===editingPilot.id?{...p,name:n}:p));
+    setEditingPilot(null);setEditPilotVal("");
+  }
+
+  // ── Centres ──
+  const [siteList,setSiteList]=useState([...SITES]);
+  const [newSiteName,setNewSiteName]=useState("");
+  const [editingSite,setEditingSite]=useState(null);
+  const [editSiteVal,setEditSiteVal]=useState("");
+
+  // Note : les centres sont stockés en mémoire locale uniquement (constante SITES)
+  // Pour une vraie persistance, il faudrait une table Supabase dédiée
+  function addSite(){
+    const n=newSiteName.trim();
+    if(!n||siteList.includes(n))return;
+    setSiteList(l=>[...l,n]);
+    setNewSiteName("");
+  }
+  function removeSite(s){setSiteList(l=>l.filter(x=>x!==s));}
+  function saveSiteEdit(){
+    const n=editSiteVal.trim();
+    if(!n||!editingSite)return;
+    setSiteList(l=>l.map(s=>s===editingSite?n:s));
+    setEditingSite(null);setEditSiteVal("");
+  }
+
+  const tabStyle=active=>({
+    padding:"6px 16px",fontSize:12,background:"none",border:"none",
+    borderBottom:active?"2px solid #1a6bbf":"2px solid transparent",
+    color:active?"#111":"#666",cursor:"pointer",fontWeight:active?700:400
+  });
+
   return(
-    <div>
-      <div style={{marginBottom:12}}>{list.map((p,i)=>(
-        <div key={p.id} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",background:i%2===0?"#f9f9f9":"#fff",borderRadius:6,marginBottom:4}}>
-          <span style={{flex:1,fontSize:13}}>{p.name}</span>
-          <button onClick={()=>remove(p)} style={{...ss.btnD,padding:"2px 7px",fontSize:11}}>✕</button>
-        </div>
-      ))}</div>
-      <div style={{display:"flex",gap:8,marginBottom:14}}>
-        <input style={{...ss.inp,flex:1}} value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()} placeholder="Nouveau pilote"/>
-        <button style={ss.btnP} onClick={add}>+ Ajouter</button>
+    <div style={{minWidth:380}}>
+      {/* Onglets */}
+      <div style={{display:"flex",borderBottom:"1px solid #ddd",marginBottom:14}}>
+        <button style={tabStyle(tab==="pilots")} onClick={()=>setTab("pilots")}>👤 Pilotes</button>
+        <button style={tabStyle(tab==="sites")} onClick={()=>setTab("sites")}>🏥 Centres</button>
       </div>
+
+      {/* ── Onglet Pilotes ── */}
+      {tab==="pilots"&&<div>
+        <div style={{marginBottom:12}}>
+          {pilotList.map((p,i)=>(
+            <div key={p.id} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",background:i%2===0?"#f9f9f9":"#fff",borderRadius:6,marginBottom:4}}>
+              {editingPilot?.id===p.id
+                ?<><input style={{...ss.inp,flex:1,height:28,fontSize:12}} value={editPilotVal} onChange={e=>setEditPilotVal(e.target.value)} onKeyDown={e=>e.key==="Enter"&&savePilotEdit()} autoFocus/>
+                  <button onClick={savePilotEdit} style={{...ss.btnP,padding:"2px 9px",fontSize:11}}>✓</button>
+                  <button onClick={()=>{setEditingPilot(null);setEditPilotVal("");}} style={{...ss.btnS,padding:"2px 7px",fontSize:11}}>✕</button>
+                </>
+                :<><span style={{flex:1,fontSize:13}}>{p.name}</span>
+                  <button onClick={()=>{setEditingPilot(p);setEditPilotVal(p.name);}} style={{...ss.btnS,padding:"2px 7px",fontSize:11}}>✏</button>
+                  <button onClick={()=>removePilot(p)} style={{...ss.btnD,padding:"2px 7px",fontSize:11}}>✕</button>
+                </>
+              }
+            </div>
+          ))}
+        </div>
+        <div style={{display:"flex",gap:8,marginBottom:14}}>
+          <input style={{...ss.inp,flex:1}} value={newPilotName} onChange={e=>setNewPilotName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addPilot()} placeholder="Nouveau pilote"/>
+          <button style={ss.btnP} onClick={addPilot}>+ Ajouter</button>
+        </div>
+      </div>}
+
+      {/* ── Onglet Centres ── */}
+      {tab==="sites"&&<div>
+        <div style={{background:"#fff8e1",border:"1px solid #ffe082",borderRadius:6,padding:"6px 10px",fontSize:11,color:"#7a6000",marginBottom:10}}>
+          ⚠ Les centres sont modifiés localement. Pour une persistance complète, une table Supabase est recommandée.
+        </div>
+        <div style={{marginBottom:12}}>
+          {siteList.map((s,i)=>(
+            <div key={s} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",background:i%2===0?"#f9f9f9":"#fff",borderRadius:6,marginBottom:4}}>
+              {editingSite===s
+                ?<><input style={{...ss.inp,flex:1,height:28,fontSize:12}} value={editSiteVal} onChange={e=>setEditSiteVal(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveSiteEdit()} autoFocus/>
+                  <button onClick={saveSiteEdit} style={{...ss.btnP,padding:"2px 9px",fontSize:11}}>✓</button>
+                  <button onClick={()=>{setEditingSite(null);setEditSiteVal("");}} style={{...ss.btnS,padding:"2px 7px",fontSize:11}}>✕</button>
+                </>
+                :<><span style={{flex:1,fontSize:13}}>{s}</span>
+                  <button onClick={()=>{setEditingSite(s);setEditSiteVal(s);}} style={{...ss.btnS,padding:"2px 7px",fontSize:11}}>✏</button>
+                  <button onClick={()=>removeSite(s)} style={{...ss.btnD,padding:"2px 7px",fontSize:11}}>✕</button>
+                </>
+              }
+            </div>
+          ))}
+        </div>
+        <div style={{display:"flex",gap:8,marginBottom:14}}>
+          <input style={{...ss.inp,flex:1}} value={newSiteName} onChange={e=>setNewSiteName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addSite()} placeholder="Nouveau centre"/>
+          <button style={ss.btnP} onClick={addSite}>+ Ajouter</button>
+        </div>
+      </div>}
+
       <button style={ss.btnP} onClick={()=>{onRefresh();onClose();}}>Fermer</button>
     </div>
   );
@@ -1628,7 +1725,8 @@ export default function App(){
         .pilots-grid{break-inside:avoid}
       }
       .page{background:#fff;max-width:1020px;margin:0 auto;padding:16px 20px}
-      .report-header{background:linear-gradient(135deg,#1a6bbf 0%,#0d3f7a 100%);color:#fff;border-radius:10px;padding:16px 22px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center}
+      .report-header{background:linear-gradient(135deg,#1a6bbf 0%,#0d3f7a 100%);color:#fff;border-radius:10px;padding:14px 22px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center}
+      .report-logo{width:60px;height:60px;object-fit:contain;background:#fff;border-radius:8px;padding:4px;flex-shrink:0;margin-right:16px}
       .report-title{font-size:17px;font-weight:700;margin-bottom:4px;letter-spacing:0.3px}
       .report-sub{font-size:9.5px;opacity:0.82;line-height:1.6}
       .report-month{background:rgba(255,255,255,0.18);border-radius:8px;padding:8px 16px;text-align:center;font-size:10px;font-weight:600;border:1px solid rgba(255,255,255,0.25)}
@@ -1654,12 +1752,14 @@ export default function App(){
     <body><div class="page">
 
       <div class="report-header">
-        <div>
+        <img class="report-logo" src="${LOGO_URI}" alt="Logo"/>
+        <div style="flex:1">
           <div class="report-title">Bilan mensuel — Physique Médicale</div>
           <div class="report-sub">Sites Galilée &amp; Bourgogne &nbsp;·&nbsp; ${dl}</div>
           <div class="report-sub" style="margin-top:3px;opacity:0.55">Document confidentiel — usage interne uniquement</div>
         </div>
         <div class="report-month">Période<span>${periodLabel}</span></div>
+        </div>
       </div>
 
       ${kpiBlock}
@@ -1695,14 +1795,17 @@ export default function App(){
       {pModal&&<Modal title={pModal.mode==="edit"?"Modifier le projet":"Nouveau projet"} onClose={()=>setPModal(null)}><ProjForm data={pModal.data} pilots={pilots} tasks={tasks} onSave={saveP} onClose={()=>setPModal(null)}/></Modal>}
       {tModal&&<Modal title={tModal.mode==="edit"?"Modifier la tâche":"Nouvelle tâche"} onClose={()=>setTModal(null)}><TaskForm data={tModal.data} projects={projects} pilots={pilots} onSave={saveT} onClose={()=>setTModal(null)}/></Modal>}
       {gantt&&<Modal title="Gantt — cliquer ▶ pour voir les tâches" onClose={()=>setGantt(false)} wide><GanttView projects={projects} tasks={tasks}/><div style={{textAlign:"right",marginTop:12}}><button style={ss.btnS} onClick={()=>setGantt(false)}>Fermer</button></div></Modal>}
-      {pilotsModal&&<Modal title="Gérer les pilotes" onClose={()=>setPilotsModal(false)}><PilotsForm pilots={pilots} onClose={()=>setPilotsModal(false)} onRefresh={fetchAll}/></Modal>}
+      {pilotsModal&&<Modal title="Gérer les pilotes & centres" onClose={()=>setPilotsModal(false)} wide={false}><PilotsForm pilots={pilots} onClose={()=>setPilotsModal(false)} onRefresh={fetchAll}/></Modal>}
       {reportModal&&<ReportModal html={buildReport()} onClose={()=>setReportModal(false)}/> }
       {reunionModal&&<ReunionModal onClose={()=>{ setReunionModal(false); fetchAll(); }}/>}
 
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
-        <div>
-          <div style={{fontSize:17,fontWeight:700}}>Suivi des projets — Physique Médicale</div>
-          <div style={{fontSize:11,color:"#666",marginTop:2}}>Sites Galilée &amp; Bourgogne</div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <img src={LOGO_URI} alt="Logo" style={{width:52,height:52,objectFit:"contain",background:"linear-gradient(135deg,#1a6bbf,#0d3f7a)",borderRadius:10,padding:6,flexShrink:0}}/>
+          <div>
+            <div style={{fontSize:17,fontWeight:700}}>Suivi des projets — Physique Médicale</div>
+            <div style={{fontSize:11,color:"#666",marginTop:2}}>Sites Galilée &amp; Bourgogne</div>
+          </div>
         </div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
           <button style={ss.btnS} onClick={fetchAll}>↻</button>
