@@ -107,6 +107,8 @@ const PRIOR_ORDER={"Haute":0,"Moyenne":1,"Basse":2};
 const STATUS_ORDER={"En cours":0,"Bloqué":1,"En attente":2,"Terminé":3};
 
 function fd(d){if(!d)return"-";const[y,m,day]=d.split("-");return day+"/"+m+"/"+y;}
+function duree(start,end){if(!start||!end)return null;const d=Math.round((new Date(end)-new Date(start))/86400000);return d>0?d:null;}
+function dureeLabel(start,end){const d=duree(start,end);if(!d)return null;return d+" j";}
 function isOD(d,s){return s!=="Terminé"&&!!d&&d<TODAY;}
 function pgCol(v){return v>=70?"#639922":v>=40?"#BA7517":"#378ADD";}
 function calcProgress(projectId, tasks){
@@ -480,8 +482,9 @@ function buildGanttSVG(projects, tasks, W=800){
   return {svg, height:TH};
 }
 
-function GanttView({projects,tasks}){
+function GanttView({projects,tasks,pilots}){
   const [expanded,setExpanded]=useState({});
+  const [filterPilot,setFilterPilot]=useState("");
   const toggle=id=>setExpanded(e=>({...e,[id]:!e[id]}));
   const startDate=new Date(TODAY); startDate.setMonth(startDate.getMonth()-1); startDate.setDate(1);
   const endDate=new Date(startDate); endDate.setFullYear(endDate.getFullYear()+1);
@@ -498,16 +501,31 @@ function GanttView({projects,tasks}){
     const wn=Math.ceil((((d-new Date(Date.UTC(d.getUTCFullYear(),0,1)))/86400000)+1)/7);
     weeks.push({date:new Date(wc),num:wn}); wc.setDate(wc.getDate()+7);
   }
+  const filteredProjects=filterPilot
+    ?projects.filter(p=>p.pilot===filterPilot||p.pilot2===filterPilot||(tasks.filter(t=>t.project_id===p.id).some(t=>t.pilot===filterPilot||t.pilot2===filterPilot)))
+    :projects;
   const rows=[];
-  projects.forEach(p=>{
+  filteredProjects.forEach(p=>{
     rows.push({type:"p",data:p});
-    if(expanded[p.id])tasks.filter(t=>t.project_id===p.id).forEach(t=>rows.push({type:"t",data:t}));
+    const projTasks=tasks.filter(t=>t.project_id===p.id&&(!filterPilot||(t.pilot===filterPilot||t.pilot2===filterPilot)));
+    if(expanded[p.id])projTasks.forEach(t=>rows.push({type:"t",data:t}));
   });
   const TH=HH+rows.length*RH+8;
   const todayX=xp(TODAY);
   if(!projects.length)return <p style={{color:"#888",fontSize:13}}>Aucun projet.</p>;
   return(
-    <div style={{overflowX:"auto",overflowY:"auto",maxHeight:"70vh"}}>
+    <div>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+        <label style={{fontSize:12,color:"#555",fontWeight:600}}>Filtrer par pilote :</label>
+        <select value={filterPilot} onChange={e=>setFilterPilot(e.target.value)}
+          style={{padding:"4px 10px",fontSize:12,border:"1px solid #ccc",borderRadius:6,background:"#fff"}}>
+          <option value="">— Tous les pilotes —</option>
+          {(pilots||[]).map(p=><option key={p.id} value={p.name}>{p.name}</option>)}
+        </select>
+        {filterPilot&&<button onClick={()=>setFilterPilot("")} style={{fontSize:11,padding:"3px 8px",background:"#f0f0f0",border:"1px solid #ccc",borderRadius:5,cursor:"pointer",color:"#555"}}>✕ Réinitialiser</button>}
+        <span style={{fontSize:11,color:"#888",marginLeft:"auto"}}>{filteredProjects.length} projet{filteredProjects.length>1?"s":""}</span>
+      </div>
+    <div style={{overflowX:"auto",overflowY:"auto",maxHeight:"68vh"}}>
       <svg width={TW} height={TH} style={{fontFamily:"Arial,sans-serif",display:"block"}}>
         <rect width={TW} height={TH} fill="#fafafa" rx="4"/>
         {months.map((m,i)=>{const x1=xp(m.toISOString().split("T")[0]);const nx=new Date(m);nx.setMonth(nx.getMonth()+1);const x2=xp(nx.toISOString().split("T")[0]);return<rect key={i} x={x1} y={HH} width={x2-x1} height={TH-HH} fill={i%2===0?"#f8f8f8":"#f2f2f2"}/>;  })}
@@ -555,6 +573,7 @@ function GanttView({projects,tasks}){
         <rect x={todayX-14} y={TH-16} width={28} height={14} rx="3" fill="#e24b4a"/>
         <text x={todayX} y={TH-6} fontSize="8" fill="#fff" textAnchor="middle" fontWeight="bold">Auj.</text>
       </svg>
+    </div>
     </div>
   );
 }
@@ -1252,7 +1271,7 @@ function ReunionModal({onClose}){
             +'</div>'
             +pTasks.map(t=>'<div class="task-item">'
               +'<div style="font-weight:600;font-size:10px;color:#333;margin-bottom:2px">'+t.name+' '+sBadge(t.status)+'</div>'
-              +'<div style="font-size:8.5px;color:#888;margin-bottom:2px">Pilote : '+t.pilot+(t.deadline?' · Éch. '+fd(t.deadline):'')+'</div>'
+              +'<div style="font-size:8.5px;color:#888;margin-bottom:2px">Pilote : '+t.pilot+(t.deadline?' · Éch. '+fd(t.deadline):'')+(dureeLabel(t.created_at,t.deadline)?' · ⏳ '+dureeLabel(t.created_at,t.deadline):'')+'</div>'
               +'<div class="item-note">'+datePrefix+(taskNotes[t.id]||"").trim()+'</div>'
               +'</div>').join("")
             +'</div>';
@@ -1263,7 +1282,7 @@ function ReunionModal({onClose}){
       ?'<div class="sc nb"><div class="st">✔ Tâches indépendantes</div>'
         +indepTasksWithNote.map(t=>'<div class="task-item">'
           +'<div style="font-weight:600;font-size:10px;color:#333;margin-bottom:2px">'+t.name+' '+sBadge(t.status)+'</div>'
-          +'<div style="font-size:8.5px;color:#888;margin-bottom:2px">Pilote : '+t.pilot+(t.deadline?' · Éch. '+fd(t.deadline):'')+'</div>'
+          +'<div style="font-size:8.5px;color:#888;margin-bottom:2px">Pilote : '+t.pilot+(t.deadline?' · Éch. '+fd(t.deadline):'')+(dureeLabel(t.created_at,t.deadline)?' · ⏳ '+dureeLabel(t.created_at,t.deadline):'')+'</div>'
           +'<div class="item-note">'+datePrefix+(taskNotes[t.id]||"").trim()+'</div>'
           +'</div>').join("")+'</div>'
       :"";
@@ -2006,6 +2025,7 @@ export default function App(){
           <div style="text-align:right;font-size:9px;color:#666;line-height:1.8">
             <div>Pilote : <b>${p.pilot}</b>${p.pilot2?` <span style="color:#888;font-size:8px">+ ${p.pilot2}</span>`:""}</div>
             <div style="${od?"color:#d9534f;font-weight:700":""}">Échéance : ${fd(p.deadline)}${od?" ⚠":""}</div>
+            ${dureeLabel(p.created_at,p.deadline)?`<div>Durée : <b style="color:#1a6bbf">${dureeLabel(p.created_at,p.deadline)}</b></div>`:""}
             <div>${done}/${pt.length} tâche${pt.length>1?"s":""} terminée${pt.length>1?"s":""}</div>
           </div>
         </div>
@@ -2016,7 +2036,7 @@ export default function App(){
         ${p.notes?`<div style="font-size:9px;color:#555;background:#fffbee;border:1px solid #f0e68c;border-radius:4px;padding:4px 8px;margin-bottom:6px">📝 ${p.notes}</div>`:""}
         ${pt.length?`
         <table>
-          <thead><tr><th>Tâche</th><th>Statut</th><th>Pilote</th><th>Pondération</th><th>Échéance</th><th>Fin réelle</th></tr></thead>
+          <thead><tr><th>Tâche</th><th>Statut</th><th>Pilote</th><th>Pondération</th><th>Durée</th><th>Échéance</th><th>Fin réelle</th></tr></thead>
           <tbody>${pt.map(t=>{
             const tod=isOD(t.deadline,t.status);
             const sc2=SC[t.status]||{bg:"#eee",tx:"#333"};
@@ -2025,6 +2045,7 @@ export default function App(){
               <td>${badge(t.status,sc2.bg,sc2.tx)}</td>
               <td>${t.pilot}${t.pilot2?` <span style="color:#888;font-size:8px">+${t.pilot2}</span>`:""}</td>
               <td style="text-align:center">${(t.weight||0)>0?`<span style="background:#f0f0f0;font-size:8px;padding:1px 5px;border-radius:3px">${t.weight}%</span>`:"—"}</td>
+              <td style="text-align:center;color:#1a6bbf;font-weight:600">${dureeLabel(t.created_at,t.deadline)||"—"}</td>
               <td style="${tod?"color:#d9534f;font-weight:700":""}">${fd(t.deadline)}${tod?" ⚠":""}</td>
               <td>${t.completion_date?fd(t.completion_date):"—"}</td>
             </tr>`;
@@ -2190,7 +2211,7 @@ export default function App(){
       {pModal&&<Modal title={pModal.mode==="edit"?"Modifier le projet":"Nouveau projet"} onClose={()=>setPModal(null)}><ProjForm data={pModal.data} pilots={pilots} tasks={tasks} onSave={saveP} onClose={()=>setPModal(null)}/></Modal>}
       {tModal&&<Modal title={tModal.mode==="edit"?"Modifier la tâche":"Nouvelle tâche"} onClose={()=>setTModal(null)}><TaskForm data={tModal.data} projects={projects} pilots={pilots} onSave={saveT} onClose={()=>setTModal(null)}/></Modal>}
       {changePwdModal&&<Modal title="Changer le mot de passe" onClose={()=>setChangePwdModal(false)}><ChangePwdForm onClose={()=>setChangePwdModal(false)}/></Modal>}
-      {gantt&&<Modal title="Gantt — cliquer ▶ pour voir les tâches" onClose={()=>setGantt(false)} wide><GanttView projects={projects} tasks={tasks}/><div style={{textAlign:"right",marginTop:12}}><button style={ss.btnS} onClick={()=>setGantt(false)}>Fermer</button></div></Modal>}
+      {gantt&&<Modal title="Gantt — cliquer ▶ pour voir les tâches" onClose={()=>setGantt(false)} wide><GanttView projects={projects} tasks={tasks} pilots={pilots}/><div style={{textAlign:"right",marginTop:12}}><button style={ss.btnS} onClick={()=>setGantt(false)}>Fermer</button></div></Modal>}
       {pilotsModal&&<Modal title="Gérer les pilotes & centres" onClose={()=>setPilotsModal(false)} wide={false}><PilotsForm pilots={pilots} sites={sites} onClose={()=>setPilotsModal(false)} onRefresh={fetchAll}/></Modal>}
       {reportModal&&<ReportModal html={buildReport()} onClose={()=>setReportModal(false)}/> }
       {reunionModal&&<ReunionModal onClose={()=>{ setReunionModal(false); fetchAll(); }}/>}
@@ -2272,7 +2293,8 @@ export default function App(){
               <div style={{display:"flex",gap:12,fontSize:11,color:"#666",marginBottom:7,flexWrap:"wrap"}}>
                 <span>Pilote : {p.pilot}{p.pilot2&&<span style={{color:"#888"}}> + {p.pilot2}</span>}</span>
                 {p.deadline&&<span style={{color:od?"#a32d2d":"#666"}}>Échéance : {fd(p.deadline)}{od?" (!!)":""}</span>}
-                <span style={{color:"#bbb"}}>Ajouté : {fd(p.created_at)}</span>
+                {dureeLabel(p.created_at,p.deadline)&&<span style={{background:"#f0f4ff",color:"#1a6bbf",borderRadius:4,padding:"1px 7px",fontWeight:600}}>⏳ {dureeLabel(p.created_at,p.deadline)}</span>}
+                <span style={{color:"#bbb"}}>Début : {fd(p.created_at)}</span>
                 <span>{done}/{tc} tâche{tc>1?"s":""} terminée{done>1?"s":""}</span>
               </div>
               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:9}}>
@@ -2304,6 +2326,7 @@ export default function App(){
                 {t.site&&<Badge label={t.site} c={SIC[t.site]||{bg:"#eee",tx:"#555"}}/>}
                 <span style={{fontSize:11,color:"#666"}}>Pilote : {t.pilot}{t.pilot2&&<span style={{color:"#888"}}> + {t.pilot2}</span>}</span>
                 {t.deadline&&<span style={{fontSize:11,color:od?"#a32d2d":"#666"}}>Éch. {fd(t.deadline)}{od?" (!!)":""}</span>}
+                {dureeLabel(t.created_at,t.deadline)&&<span style={{background:"#f0f4ff",color:"#1a6bbf",borderRadius:4,padding:"1px 7px",fontSize:10,fontWeight:600}}>⏳ {dureeLabel(t.created_at,t.deadline)}</span>}
                 {t.completion_date&&<span style={{fontSize:11,color:"#27500A"}}>Fin réelle : {fd(t.completion_date)}</span>}
                 <span style={{fontSize:10,color:"#bbb"}}>Début : {fd(t.created_at)}</span>
                 {(t.weight||0)>0&&<span style={{background:"#f0f0f0",borderRadius:4,padding:"1px 7px",fontSize:10,color:"#555",fontWeight:600}}>⏱ {t.weight}%</span>}
