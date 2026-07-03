@@ -13,6 +13,91 @@ const LOGO_URI="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAiQAAAIoCAYAAABZMf
 const STATUSES=["En cours","En attente","Terminé","Bloqué"];
 const PRIORITIES=["Haute","Moyenne","Basse"];
 const SITES=["Centre Bourgogne","Centre Galilée"];
+const DEFAULT_PWD_HASH="Precis10n!"; // Mot de passe par défaut
+
+function LoginScreen({onLogin}){
+  const [pwd,setPwd]=useState("");
+  const [err,setErr]=useState(false);
+  const [showChange,setShowChange]=useState(false);
+  const [oldPwd,setOldPwd]=useState("");
+  const [newPwd,setNewPwd]=useState("");
+  const [newPwd2,setNewPwd2]=useState("");
+  const [changeErr,setChangeErr]=useState("");
+  const [changeOk,setChangeOk]=useState(false);
+
+  function storedPwd(){return localStorage.getItem("app_pwd")||DEFAULT_PWD_HASH;}
+
+  function handleLogin(e){
+    e.preventDefault();
+    if(pwd===storedPwd()){setErr(false);onLogin();}
+    else{setErr(true);setPwd("");}
+  }
+  function handleChange(e){
+    e.preventDefault();
+    setChangeErr(""); setChangeOk(false);
+    if(oldPwd!==storedPwd()){setChangeErr("Mot de passe actuel incorrect.");return;}
+    if(newPwd.length<6){setChangeErr("Le nouveau mot de passe doit faire au moins 6 caractères.");return;}
+    if(newPwd!==newPwd2){setChangeErr("Les deux nouveaux mots de passe ne correspondent pas.");return;}
+    localStorage.setItem("app_pwd",newPwd);
+    setChangeOk(true);
+    setOldPwd(""); setNewPwd(""); setNewPwd2("");
+    setTimeout(()=>setShowChange(false),1500);
+  }
+
+  return(
+    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#0d3f7a 0%,#1a6bbf 100%)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Arial,sans-serif"}}>
+      <div style={{background:"#fff",borderRadius:16,padding:"36px 40px",width:360,boxShadow:"0 8px 40px rgba(0,0,0,0.18)"}}>
+        <div style={{textAlign:"center",marginBottom:24}}>
+          <div style={{background:"linear-gradient(135deg,#1a6bbf,#0d3f7a)",borderRadius:12,width:56,height:56,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px"}}>
+            <span style={{fontSize:26}}>🔒</span>
+          </div>
+          <div style={{fontSize:16,fontWeight:700,color:"#111"}}>Physique Médicale</div>
+          <div style={{fontSize:11,color:"#888",marginTop:3}}>Sites Galilée &amp; Bourgogne</div>
+        </div>
+
+        {!showChange
+          ?<form onSubmit={handleLogin}>
+            <label style={{fontSize:11,color:"#555",display:"block",marginBottom:4}}>Mot de passe</label>
+            <input
+              type="password" value={pwd} onChange={e=>{setPwd(e.target.value);setErr(false);}}
+              placeholder="Entrez le mot de passe"
+              style={{width:"100%",padding:"9px 12px",fontSize:13,border:err?"1.5px solid #d9534f":"1.5px solid #ccc",borderRadius:8,marginBottom:8,boxSizing:"border-box",outline:"none"}}
+              autoFocus
+            />
+            {err&&<div style={{color:"#d9534f",fontSize:11,marginBottom:8}}>Mot de passe incorrect.</div>}
+            <button type="submit" style={{width:"100%",padding:"10px",background:"linear-gradient(135deg,#1a6bbf,#0d3f7a)",color:"#fff",border:"none",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",marginBottom:10}}>
+              Accéder à l&apos;application
+            </button>
+            <button type="button" onClick={()=>setShowChange(true)} style={{width:"100%",padding:"7px",background:"none",color:"#888",border:"1px solid #ddd",borderRadius:8,fontSize:11,cursor:"pointer"}}>
+              Changer le mot de passe
+            </button>
+          </form>
+          :<form onSubmit={handleChange}>
+            <div style={{fontSize:12,fontWeight:700,color:"#111",marginBottom:12}}>Changer le mot de passe</div>
+            {["Mot de passe actuel","Nouveau mot de passe","Confirmer le nouveau"].map((lbl,i)=>(
+              <div key={i} style={{marginBottom:8}}>
+                <label style={{fontSize:11,color:"#555",display:"block",marginBottom:3}}>{lbl}</label>
+                <input type="password"
+                  value={i===0?oldPwd:i===1?newPwd:newPwd2}
+                  onChange={e=>{if(i===0)setOldPwd(e.target.value);else if(i===1)setNewPwd(e.target.value);else setNewPwd2(e.target.value);setChangeErr("");}}
+                  style={{width:"100%",padding:"8px 11px",fontSize:12,border:"1.5px solid #ccc",borderRadius:7,boxSizing:"border-box"}}
+                />
+              </div>
+            ))}
+            {changeErr&&<div style={{color:"#d9534f",fontSize:11,marginBottom:8}}>{changeErr}</div>}
+            {changeOk&&<div style={{color:"#27500A",fontSize:11,marginBottom:8}}>✓ Mot de passe modifié avec succès !</div>}
+            <button type="submit" style={{width:"100%",padding:"9px",background:"#1a6bbf",color:"#fff",border:"none",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",marginBottom:8}}>
+              Enregistrer
+            </button>
+            <button type="button" onClick={()=>{setShowChange(false);setChangeErr("");}} style={{width:"100%",padding:"7px",background:"none",color:"#888",border:"1px solid #ddd",borderRadius:8,fontSize:11,cursor:"pointer"}}>
+              ← Retour
+            </button>
+          </form>
+        }
+      </div>
+    </div>
+  );
+}
 const GCOLS=["#378ADD","#1D9E75","#BA7517","#D4537E","#7F77DD","#D85A30","#639922"];
 const SC={"En cours":{bg:"#E6F1FB",tx:"#0C447C"},"En attente":{bg:"#FAEEDA",tx:"#633806"},"Terminé":{bg:"#EAF3DE",tx:"#27500A"},"Bloqué":{bg:"#FCEBEB",tx:"#791F1F"}};
 const PC={"Haute":{bg:"#FAECE7",tx:"#712B13"},"Moyenne":{bg:"#FAEEDA",tx:"#633806"},"Basse":{bg:"#EAF3DE",tx:"#27500A"}};
@@ -142,6 +227,42 @@ function TaskForm({data,projects,pilots,onSave,onClose}){
         <button style={ss.btnP} onClick={()=>(f.name||"").trim()&&onSave(f)}>Enregistrer</button>
         <button style={ss.btnS} onClick={onClose}>Annuler</button>
       </div>
+    </div>
+  );
+}
+
+function ChangePwdForm({onClose}){
+  const [oldPwd,setOldPwd]=useState("");
+  const [newPwd,setNewPwd]=useState("");
+  const [newPwd2,setNewPwd2]=useState("");
+  const [err,setErr]=useState("");
+  const [ok,setOk]=useState(false);
+  function storedPwd(){return localStorage.getItem("app_pwd")||DEFAULT_PWD_HASH;}
+  function handle(e){
+    e.preventDefault(); setErr(""); setOk(false);
+    if(oldPwd!==storedPwd()){setErr("Mot de passe actuel incorrect.");return;}
+    if(newPwd.length<6){setErr("Minimum 6 caractères.");return;}
+    if(newPwd!==newPwd2){setErr("Les mots de passe ne correspondent pas.");return;}
+    localStorage.setItem("app_pwd",newPwd);
+    setOk(true);
+    setTimeout(()=>onClose(),1500);
+  }
+  return(
+    <div style={{minWidth:320}}>
+      <form onSubmit={handle}>
+        {[["Mot de passe actuel",oldPwd,setOldPwd],["Nouveau mot de passe",newPwd,setNewPwd],["Confirmer le nouveau",newPwd2,setNewPwd2]].map(([lbl,val,set],i)=>(
+          <div key={i} style={{marginBottom:10}}>
+            <label style={{fontSize:11,color:"#555",display:"block",marginBottom:3}}>{lbl}</label>
+            <input type="password" value={val} onChange={e=>{set(e.target.value);setErr("");}} style={{width:"100%",padding:"8px 11px",fontSize:12,border:"1.5px solid #ccc",borderRadius:7,boxSizing:"border-box"}}/>
+          </div>
+        ))}
+        {err&&<div style={{color:"#d9534f",fontSize:11,marginBottom:8}}>{err}</div>}
+        {ok&&<div style={{color:"#27500A",fontSize:12,marginBottom:8,fontWeight:600}}>✓ Mot de passe modifié !</div>}
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:4}}>
+          <button type="button" onClick={onClose} style={{padding:"7px 14px",fontSize:12,background:"#f0f0f0",color:"#333",border:"1px solid #ccc",borderRadius:6,cursor:"pointer"}}>Annuler</button>
+          <button type="submit" style={{padding:"7px 14px",fontSize:12,background:"#1a6bbf",color:"#fff",border:"none",borderRadius:6,cursor:"pointer",fontWeight:700}}>Enregistrer</button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -1472,6 +1593,7 @@ function applySort(items,key,dir){
 }
 
 export default function App(){
+  const [authed,setAuthed]=useState(()=>sessionStorage.getItem("app_authed")==="1");
   const [projects,setProjects]=useState([]);
   const [tasks,setTasks]=useState([]);
   const [pilots,setPilots]=useState([]);
@@ -1483,7 +1605,7 @@ export default function App(){
   const [fTPrj,setFTPrj]=useState(""); const [fTSt,setFTSt]=useState(""); const [fTSite,setFTSite]=useState("");
   const [sortKey,setSortKey]=useState(""); const [sortDir,setSortDir]=useState("asc");
   const [pModal,setPModal]=useState(null); const [tModal,setTModal]=useState(null);
-  const [gantt,setGantt]=useState(false); const [pilotsModal,setPilotsModal]=useState(false); const [reportModal,setReportModal]=useState(false); const [reunionModal,setReunionModal]=useState(false);
+  const [gantt,setGantt]=useState(false); const [pilotsModal,setPilotsModal]=useState(false); const [reportModal,setReportModal]=useState(false); const [reunionModal,setReunionModal]=useState(false); const [changePwdModal,setChangePwdModal]=useState(false);
   const [reportDateFrom,setReportDateFrom]=useState(()=>{const d=new Date(TODAY);d.setMonth(d.getMonth()-3);return d.toISOString().split("T")[0];});
   const [reportDateTo,setReportDateTo]=useState(()=>{const d=new Date(TODAY);d.setMonth(d.getMonth()+3);return d.toISOString().split("T")[0];});
 
@@ -1563,6 +1685,8 @@ export default function App(){
     const bar=(v)=>`<div style="background:#e0e0e0;border-radius:4px;height:8px;width:100%;overflow:hidden"><div style="width:${Math.min(v,100)}%;height:100%;background:${pgCol(v)};border-radius:4px"></div></div>`;
 
     // ── KPIs ──
+    const todoPendingN=todos.filter(t=>!t.done).length;
+    const todoDoneN=todos.filter(t=>t.done).length;
     const kpiBlock=`
     <div class="kpi-grid">
       <div class="kpi-card" style="border-top:3px solid #1a6bbf">
@@ -1581,13 +1705,13 @@ export default function App(){
         <div class="kpi-label">Avancement moyen</div>
         <div class="kpi-value" style="color:#BA7517">${avgN}%</div>
       </div>
-      <div class="kpi-card" style="border-top:3px solid #7F77DD">
-        <div class="kpi-label">Total tâches</div>
-        <div class="kpi-value" style="color:#7F77DD">${tasks.length}</div>
+      <div class="kpi-card" style="border-top:3px solid ${todoPendingN>0?"#BA7517":"#27500A"}">
+        <div class="kpi-label">To-do à faire</div>
+        <div class="kpi-value" style="color:${todoPendingN>0?"#BA7517":"#27500A"}">${todoPendingN}</div>
       </div>
-      <div class="kpi-card" style="border-top:3px solid #D85A30">
-        <div class="kpi-label">Projets terminés</div>
-        <div class="kpi-value" style="color:#D85A30">${projects.filter(p=>p.status==="Terminé").length}</div>
+      <div class="kpi-card" style="border-top:3px solid #7F77DD">
+        <div class="kpi-label">To-do terminés</div>
+        <div class="kpi-value" style="color:#7F77DD">${todoDoneN}</div>
       </div>
     </div>`;
 
@@ -1651,20 +1775,29 @@ export default function App(){
 
     // ── Cards pilotes — chaque card a page-break-inside:avoid ──
     const pilotsBlock=`
-    <div class="section-block" style="page-break-inside:avoid">
+    <div class="section-block">
       <div class="section-title">👥 Statistiques pilotes</div>
       <div class="pilots-grid">
       ${pilots.map((p,pi)=>{
         const col=GCOLS[pi%GCOLS.length];
-        const myProj=projects.filter(pr=>pr.pilot===p.name||pr.pilot2===p.name);
-        const myT=tasks.filter(t=>t.pilot===p.name||t.pilot2===p.name);
+        // ── Filtre chevauchement période ──
+        function inPeriod(item){
+          const iS=item.created_at||item.deadline;
+          const iE=item.deadline||item.created_at;
+          if(!iS&&!iE)return true;
+          if(reportDateTo&&iS&&iS>reportDateTo)return false;
+          if(reportDateFrom&&iE&&iE<reportDateFrom)return false;
+          return true;
+        }
+        const myProj=projects.filter(pr=>(pr.pilot===p.name||pr.pilot2===p.name)&&inPeriod(pr))
+          .sort((a,b)=>(a.deadline||"9999")>(b.deadline||"9999")?1:-1);
+        const myT=tasks.filter(t=>(t.pilot===p.name||t.pilot2===p.name)&&inPeriod(t))
+          .sort((a,b)=>(a.deadline||"9999")>(b.deadline||"9999")?1:-1);
         const active=myProj.filter(pr=>pr.status!=="Terminé").length;
         const tActive=myT.filter(t=>t.status!=="Terminé").length;
         const tDone=myT.filter(t=>t.status==="Terminé").length;
         const delay=delayInfo(p.name);
-        const pie=pilotPieSVG(p.name,96);
-        const load=myT.filter(t=>t.status!=="Terminé").reduce((s,t)=>s+(t.weight||0),0);
-        const loadCol=load>100?"#d9534f":load>80?"#BA7517":"#27500A";
+        const pie=pilotPieSVG(p.name,80);
         // Todos filtrés sur la période
         const myTd=(todos||[]).filter(td=>{
           if(td.assigned_to!==p.name)return false;
@@ -1676,37 +1809,73 @@ export default function App(){
         }).sort((a,b)=>(a.due_date||"9999")>(b.due_date||"9999")?1:-1);
         const tdPending=myTd.filter(td=>!td.done);
         const tdDone=myTd.filter(td=>td.done);
+
+        // Section projets
+        const projSection=myProj.length?`
+          <div style="margin-top:7px;border-top:1px solid #eee;padding-top:5px">
+            <div style="font-size:8px;color:#1a6bbf;font-weight:700;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px">📁 Projets (${myProj.length})</div>
+            ${myProj.map(pr=>{
+              const sc=SC[pr.status]||{bg:"#eee",tx:"#333"};
+              const od=isOD(pr.deadline,pr.status);
+              return`<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 5px;background:${pr.status==="Terminé"?"#f3fbee":"#f0f4ff"};border-radius:3px;margin-bottom:2px;font-size:8px">
+                <span style="font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px">${pr.name}</span>
+                <span style="flex-shrink:0;margin-left:4px;background:${sc.bg};color:${sc.tx};font-size:7px;font-weight:700;padding:1px 4px;border-radius:2px">${pr.status}</span>
+                <span style="font-size:7px;color:${od?"#a32d2d":"#888"};margin-left:4px;flex-shrink:0">${pr.deadline?fd(pr.deadline):"—"}${od?" ⚠":""}</span>
+              </div>`;
+            }).join("")}
+          </div>`:"";
+
+        // Section tâches
+        const taskSection=myT.length?`
+          <div style="margin-top:7px;border-top:1px solid #eee;padding-top:5px">
+            <div style="font-size:8px;color:#639922;font-weight:700;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px">✅ Tâches (${tActive} en cours · ${tDone} terminée${tDone>1?"s":""})</div>
+            ${myT.map(t=>{
+              const sc=SC[t.status]||{bg:"#eee",tx:"#333"};
+              const od=isOD(t.deadline,t.status);
+              return`<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 5px;background:${t.status==="Terminé"?"#f3fbee":"#fafafa"};border-radius:3px;margin-bottom:2px;font-size:8px;opacity:${t.status==="Terminé"?0.75:1}">
+                <span style="font-weight:${t.status==="Terminé"?"400":"500"};text-decoration:${t.status==="Terminé"?"line-through":"none"};flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px">${t.name}</span>
+                <span style="flex-shrink:0;margin-left:4px;background:${sc.bg};color:${sc.tx};font-size:7px;font-weight:700;padding:1px 4px;border-radius:2px">${t.status}</span>
+                <span style="font-size:7px;color:${od?"#a32d2d":"#888"};margin-left:4px;flex-shrink:0">${t.deadline?fd(t.deadline):"—"}${od?" ⚠":""}</span>
+              </div>`;
+            }).join("")}
+          </div>`:"";
+
+        // Section todos
         const todoSection=myTd.length?`
-          <div style="margin-top:8px;border-top:1px solid #eee;padding-top:6px">
-            <div style="font-size:8px;color:#BA7517;font-weight:700;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.4px">To-do list (${tdPending.length} en attente · ${tdDone.length} fait${tdDone.length>1?"s":""})</div>
+          <div style="margin-top:7px;border-top:1px solid #eee;padding-top:5px">
+            <div style="font-size:8px;color:#BA7517;font-weight:700;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px">☑ To-do (${tdPending.length} en attente · ${tdDone.length} fait${tdDone.length>1?"s":""})</div>
             ${myTd.map(td=>{
               const od=!td.done&&td.due_date&&td.due_date<TODAY;
-              return`<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 4px;background:${td.done?"#f3fbee":"#fffbee"};border-radius:3px;margin-bottom:2px;font-size:8px;opacity:${td.done?0.7:1}">
-                <span style="font-weight:500;text-decoration:${td.done?"line-through":"none"};flex:1">${td.title}</span>
-                <span style="flex-shrink:0;margin-left:6px;background:${td.done?"#EAF3DE":od?"#FCEBEB":"#FAEEDA"};color:${td.done?"#27500A":od?"#791F1F":"#633806"};font-size:7px;font-weight:700;padding:1px 4px;border-radius:2px">${td.done?"✓ Fait":od?"⚠ Retard":"En attente"}</span>
+              return`<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 5px;background:${td.done?"#f3fbee":"#fffbee"};border-radius:3px;margin-bottom:2px;font-size:8px;opacity:${td.done?0.7:1}">
+                <span style="font-weight:500;text-decoration:${td.done?"line-through":"none"};flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px">${td.title}</span>
+                <span style="flex-shrink:0;margin-left:4px;background:${td.done?"#EAF3DE":od?"#FCEBEB":"#FAEEDA"};color:${td.done?"#27500A":od?"#791F1F":"#633806"};font-size:7px;font-weight:700;padding:1px 4px;border-radius:2px">${td.done?"✓ Fait":od?"⚠ Retard":"En attente"}</span>
                 ${td.due_date?`<span style="font-size:7px;color:${od?"#a32d2d":"#888"};margin-left:4px;flex-shrink:0">${fd(td.due_date)}</span>`:""}
               </div>`;
             }).join("")}
           </div>`:"";
+
         return`
         <div class="pilot-card" style="border-top:3px solid ${col}">
-          <div style="font-weight:700;font-size:11px;color:${col};margin-bottom:8px;display:flex;align-items:center;gap:6px">
+          <div style="font-weight:700;font-size:11px;color:${col};margin-bottom:7px;display:flex;align-items:center;gap:6px">
             <span style="background:${col};color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0">${p.name[0]}</span>
             ${p.name}
           </div>
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
             ${pie}
-            <div style="font-size:9px;color:#555;line-height:1.8">
-              <div>📁 Projets actifs : <b>${active}</b></div>
+            <div style="font-size:9px;color:#555;line-height:1.7">
+              <div>📁 Projets période : <b>${myProj.length}</b> (${active} actifs)</div>
+              <div>🔄 Tâches en cours : <b>${tActive}</b></div>
               <div>✅ Tâches terminées : <b>${tDone}</b></div>
-              <div>🔄 En cours : <b>${tActive}</b></div>
+              <div>☑ To-do terminés : <b style="color:#27500A">${tdDone.length}</b> / ${myTd.length}</div>
             </div>
           </div>
-          <div style="background:#f8f8f8;border-radius:5px;padding:6px 8px">
+          <div style="background:#f8f8f8;border-radius:5px;padding:5px 8px;margin-bottom:4px">
             <div style="font-size:8px;color:#888;margin-bottom:2px;text-transform:uppercase;letter-spacing:0.4px">Respect des délais</div>
-            <div style="font-weight:700;font-size:15px;color:${delay.color}">${delay.value}</div>
-            <div style="color:${delay.color};font-size:9px">${delay.label}${delay.count?` · ${delay.count} tâche${delay.count>1?"s":""} clôturée${delay.count>1?"s":""}`:""}</div>
+            <div style="font-weight:700;font-size:13px;color:${delay.color}">${delay.value}</div>
+            <div style="color:${delay.color};font-size:8px">${delay.label}${delay.count?` · ${delay.count} tâche${delay.count>1?"s":""} clôturée${delay.count>1?"s":""}`:""}</div>
           </div>
+          ${projSection}
+          ${taskSection}
           ${todoSection}
         </div>`;
       }).join("")}
@@ -1860,7 +2029,7 @@ export default function App(){
       .kpi-value{font-size:24px;font-weight:700;line-height:1}
       .section-block{background:#fff;border:1px solid #dde3f0;border-radius:8px;padding:12px 14px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,0.04)}
       .section-title{font-size:11px;font-weight:700;color:#1a6bbf;margin-bottom:10px;padding-bottom:5px;border-bottom:2px solid #e8edf5;letter-spacing:0.3px}
-      .pilots-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+      .pilots-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
       .pilot-card{background:#fff;border:1px solid #dde3f0;border-radius:8px;padding:12px;page-break-inside:avoid;break-inside:avoid}
       table{width:100%;border-collapse:collapse;font-size:9.5px}
       th{padding:4px 8px;text-align:left;background:#f0f4fa;color:#444;font-weight:700;border-bottom:2px solid #dde3f0}
@@ -1901,6 +2070,9 @@ export default function App(){
       </div>
       ${projRows}
       ${indepBlock}
+
+      <div class="page-break"></div>
+
       ${todoBlock}
 
       <div class="footer">
@@ -1911,12 +2083,15 @@ export default function App(){
     </div></body></html>`;
   }
 
+  if(!authed)return <LoginScreen onLogin={()=>{sessionStorage.setItem("app_authed","1");setAuthed(true);}}/>;
+
   if(loading)return <Spinner/>;
 
   return(
     <div style={{padding:"1rem 0",fontFamily:"Arial,sans-serif",color:"#111"}}>
       {pModal&&<Modal title={pModal.mode==="edit"?"Modifier le projet":"Nouveau projet"} onClose={()=>setPModal(null)}><ProjForm data={pModal.data} pilots={pilots} tasks={tasks} onSave={saveP} onClose={()=>setPModal(null)}/></Modal>}
       {tModal&&<Modal title={tModal.mode==="edit"?"Modifier la tâche":"Nouvelle tâche"} onClose={()=>setTModal(null)}><TaskForm data={tModal.data} projects={projects} pilots={pilots} onSave={saveT} onClose={()=>setTModal(null)}/></Modal>}
+      {changePwdModal&&<Modal title="Changer le mot de passe" onClose={()=>setChangePwdModal(false)}><ChangePwdForm onClose={()=>setChangePwdModal(false)}/></Modal>}
       {gantt&&<Modal title="Gantt — cliquer ▶ pour voir les tâches" onClose={()=>setGantt(false)} wide><GanttView projects={projects} tasks={tasks}/><div style={{textAlign:"right",marginTop:12}}><button style={ss.btnS} onClick={()=>setGantt(false)}>Fermer</button></div></Modal>}
       {pilotsModal&&<Modal title="Gérer les pilotes & centres" onClose={()=>setPilotsModal(false)} wide={false}><PilotsForm pilots={pilots} sites={sites} onClose={()=>setPilotsModal(false)} onRefresh={fetchAll}/></Modal>}
       {reportModal&&<ReportModal html={buildReport()} onClose={()=>setReportModal(false)}/> }
@@ -1933,6 +2108,7 @@ export default function App(){
         <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
           <button style={ss.btnS} onClick={fetchAll}>↻</button>
           <button style={ss.btnS} onClick={()=>setPilotsModal(true)}>👥 Pilotes</button>
+          <button style={ss.btnS} onClick={()=>setChangePwdModal(true)}>🔑</button>
           <button style={ss.btnS} onClick={()=>setGantt(true)}>Gantt</button>
           <button style={{...ss.btnS,background:"#1D9E75",color:"#fff",border:"none"}} onClick={()=>setReunionModal(true)}>🗓 Réunion de service</button>
           <button style={ss.btnP} onClick={()=>setReportModal(true)}>Bilan PDF</button>
