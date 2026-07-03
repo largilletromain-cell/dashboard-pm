@@ -407,7 +407,7 @@ function GanttView({projects,tasks}){
           const sc=SC[item.status]||{bg:"#eee",tx:"#333"};
           return(
             <g key={row.type+item.id}>
-              <rect x={0} y={y} width={TW} height={RH} fill={i%2===0?"#fff":"#fafafa"}/>
+              <rect x={0} y={y} width={TW} height={RH} fill={!isP&&item.status==="Terminé"?"#f0faf3":i%2===0?"#fff":"#fafafa"}/>
               <line x1={0} y1={y+RH} x2={TW} y2={y+RH} stroke="#f0f0f0" strokeWidth="0.5"/>
               <rect x={0} y={y} width={LW} height={RH} fill={isP?"#f8faff":"#f2f5ff"}/>
               <line x1={LW} y1={y} x2={LW} y2={y+RH} stroke="#ddd" strokeWidth="1"/>
@@ -415,10 +415,14 @@ function GanttView({projects,tasks}){
               <text x={isP?20:30} y={y+RH/2+4} fontSize={isP?10.5:9.5} fill={isP?"#111":"#555"} fontWeight={isP?"bold":"normal"}>{!isP&&"↳ "}{nm}</text>
               {isP&&<g><rect x={LW-50} y={y+8} width={44} height={13} rx="3" fill={sc.bg}/><text x={LW-28} y={y+18} fontSize="7.5" fill={sc.tx} fontWeight="bold" textAnchor="middle">{item.status}</text></g>}
               {item.deadline&&<g>
-                <rect x={x1} y={y+7} width={Math.max(x2-x1,3)} height={RH-14} rx="3" fill={col+(isP?"28":"18")} stroke={col} strokeWidth={isP?"1.5":"1"}/>
+                {isP&&<rect x={x1} y={y+7} width={Math.max(x2-x1,3)} height={RH-14} rx="3" fill={col+"28"} stroke={col} strokeWidth="1.5"/>}
                 {isP&&pw>0&&<rect x={x1} y={y+7} width={pw} height={RH-14} rx="3" fill={col}/>}
                 {isP&&pw>14&&<text x={x1+pw/2} y={y+RH/2+3.5} fontSize="8" fill="#fff" fontWeight="bold" textAnchor="middle">{prog}%</text>}
-                {!isP&&<rect x={x1} y={y+10} width={Math.max(x2-x1,3)} height={RH-20} rx="2" fill={item.status==="Terminé"?"#27ae60":col}/>}
+                {!isP&&(()=>{const doneT=item.status==="Terminé";const gc=doneT?"#27ae60":col;return<g>
+                  <rect x={x1} y={y+7} width={Math.max(x2-x1,3)} height={RH-14} rx="3" fill={gc+"28"} stroke={gc} strokeWidth="1"/>
+                  <rect x={x1} y={y+10} width={Math.max(x2-x1,3)} height={RH-20} rx="2" fill={gc}/>
+                  {doneT&&<text x={x1+Math.max(x2-x1,3)/2} y={y+RH/2+3.5} fontSize="7.5" fill="#fff" fontWeight="bold" textAnchor="middle">✓</text>}
+                </g>;})()}
               </g>}
             </g>
           );
@@ -794,7 +798,7 @@ function StatsView({projects,tasks,pilots,todos,dateFrom,setDateFrom,dateTo,setD
         </div>
       </div>
       <WorkloadChart projects={projects} tasks={tasks} pilots={pilotList}/>
-      <WorkloadTable projects={projects} tasks={tasks} pilots={pilotList}/>
+
       {pilotList.map(p=><PilotCard key={p.id} pilot={p.name} projects={projects} tasks={tasks} todos={todos||[]} dateFrom={dateFrom} dateTo={dateTo}/>)}
     </div>
   );
@@ -1675,7 +1679,6 @@ export default function App(){
               <div>📁 Projets actifs : <b>${active}</b></div>
               <div>✅ Tâches terminées : <b>${tDone}</b></div>
               <div>🔄 En cours : <b>${tActive}</b></div>
-              <div>⏱ Charge : <b style="color:${loadCol}">${load}%</b></div>
             </div>
           </div>
           <div style="background:#f8f8f8;border-radius:5px;padding:6px 8px">
