@@ -418,7 +418,7 @@ function GanttView({projects,tasks}){
                 <rect x={x1} y={y+7} width={Math.max(x2-x1,3)} height={RH-14} rx="3" fill={col+(isP?"28":"18")} stroke={col} strokeWidth={isP?"1.5":"1"}/>
                 {isP&&pw>0&&<rect x={x1} y={y+7} width={pw} height={RH-14} rx="3" fill={col}/>}
                 {isP&&pw>14&&<text x={x1+pw/2} y={y+RH/2+3.5} fontSize="8" fill="#fff" fontWeight="bold" textAnchor="middle">{prog}%</text>}
-                {!isP&&<rect x={x1} y={y+10} width={Math.max(x2-x1,3)} height={RH-20} rx="2" fill={col}/>}
+                {!isP&&<rect x={x1} y={y+10} width={Math.max(x2-x1,3)} height={RH-20} rx="2" fill={item.status==="Terminé"?"#27ae60":col}/>}
               </g>}
             </g>
           );
@@ -432,17 +432,28 @@ function GanttView({projects,tasks}){
 }
 
 function buildChargeSVG(projects,tasks,pilots,W=700){
-  const months=[]; const now=new Date(TODAY);
-  for(let i=-1;i<11;i++)months.push(new Date(now.getFullYear(),now.getMonth()+i,1));
-  const data=months.map(m=>{
-    const mEnd=new Date(m.getFullYear(),m.getMonth()+1,0);
+  // Générer 26 semaines en arrière et 26 en avant (52 semaines)
+  const weeks=[]; const now=new Date(TODAY);
+  // Trouver le lundi de la semaine courante
+  const startW=new Date(now);
+  const dow=startW.getDay()||7; startW.setDate(startW.getDate()-dow+1);
+  startW.setDate(startW.getDate()-13*7); // 13 semaines en arrière
+  for(let i=0;i<27;i++){const d=new Date(startW);d.setDate(d.getDate()+i*7);weeks.push(d);}
+  function weekLabel(d){
+    const d2=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));
+    d2.setUTCDate(d2.getUTCDate()+4-(d2.getUTCDay()||7));
+    const wn=Math.ceil((((d2-new Date(Date.UTC(d2.getUTCFullYear(),0,1)))/86400000)+1)/7);
+    return "S"+wn;
+  }
+  const data=weeks.map(wStart=>{
+    const wEnd=new Date(wStart); wEnd.setDate(wEnd.getDate()+6);
+    const wS=wStart.toISOString().split("T")[0], wE=wEnd.toISOString().split("T")[0];
     const loads={};
     pilots.forEach(p=>{
-      const pW=projects.filter(pr=>(pr.pilot===p.name||pr.pilot2===p.name)&&pr.status!=="Terminé"&&pr.deadline&&new Date(pr.created_at||pr.deadline)<=mEnd&&new Date(pr.deadline)>=m).reduce((s,pr)=>s+(pr.weight||0),0);
-      const tW=tasks.filter(t=>(t.pilot===p.name||t.pilot2===p.name)&&t.status!=="Terminé"&&t.deadline&&new Date(t.created_at||t.deadline)<=mEnd&&new Date(t.deadline)>=m).reduce((s,t)=>s+(t.weight||0),0);
-      loads[p.name]=pW+tW;
+      const load=[...projects,...tasks].filter(item=>(item.pilot===p.name||item.pilot2===p.name)).reduce((s,item)=>s+taskLoadInPeriod(item,wS,wE),0);
+      loads[p.name]=Math.round(load);
     });
-    return{label:m.toLocaleDateString("fr-FR",{month:"short",year:"2-digit"}),month:m,loads};
+    return{label:weekLabel(wStart),wStart,loads};
   });
   const CH=280,PL=45,PB=50,PT=20,PR=15;
   const cW=W-PL-PR,cH=CH-PB-PT;
@@ -464,15 +475,21 @@ function buildChargeSVG(projects,tasks,pilots,W=700){
     svg+=`<path d="${path}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round"/>`;
     pts.forEach(([x,y],i)=>{
       svg+=`<circle cx="${x}" cy="${y}" r="3.5" fill="${col}" stroke="#fff" stroke-width="1.5"/>`;
-      if((data[i].loads[p.name]||0)>0)svg+=`<text x="${x}" y="${y-7}" font-size="7.5" fill="${col}" text-anchor="middle" font-weight="bold">${data[i].loads[p.name]}%</text>`;
+      if((data[i].loads[p.name]||0)>0&&colW>30)svg+=`<text x="${x}" y="${y-7}" font-size="7" fill="${col}" text-anchor="middle" font-weight="bold">${data[i].loads[p.name]}%</text>`;
     });
   });
+  // Ligne "aujourd'hui"
+  const todayIdx=data.findIndex(d=>{const we=new Date(d.wStart);we.setDate(we.getDate()+6);return d.wStart.toISOString().split("T")[0]<=TODAY&&we.toISOString().split("T")[0]>=TODAY;});
+  if(todayIdx>=0){
+    const tx=PL+todayIdx*colW+colW/2;
+    svg+=`<line x1="${tx}" y1="${PT}" x2="${tx}" y2="${CH-PB}" stroke="#e24b4a" stroke-width="1.5" stroke-dasharray="4,3"/>`;
+  }
   data.forEach((d,i)=>{
     const x=PL+i*colW+colW/2;
-    const isNow=d.month.getMonth()===now.getMonth()&&d.month.getFullYear()===now.getFullYear();
+    const isNow=todayIdx===i;
     svg+=`<line x1="${x}" y1="${PT}" x2="${x}" y2="${CH-PB}" stroke="#ececec" stroke-width="0.5"/>`;
-    svg+=`<rect x="${x-14}" y="${CH-PB+3}" width="28" height="14" rx="3" fill="${isNow?"#1a6bbf":"transparent"}"/>`;
-    svg+=`<text x="${x}" y="${CH-PB+13}" font-size="8.5" fill="${isNow?"#fff":"#666"}" text-anchor="middle" font-weight="${isNow?"bold":"normal"}">${d.label}</text>`;
+    svg+=`<rect x="${x-10}" y="${CH-PB+3}" width="20" height="14" rx="3" fill="${isNow?"#1a6bbf":"transparent"}"/>`;
+    svg+=`<text x="${x}" y="${CH-PB+13}" font-size="7.5" fill="${isNow?"#fff":"#666"}" text-anchor="middle" font-weight="${isNow?"bold":"normal"}">${d.label}</text>`;
   });
   svg+=`<line x1="${PL}" y1="${PT}" x2="${PL}" y2="${CH-PB}" stroke="#ccc" stroke-width="1"/>`;
   svg+=`<line x1="${PL}" y1="${CH-PB}" x2="${W-PR}" y2="${CH-PB}" stroke="#ccc" stroke-width="1"/>`;
@@ -491,18 +508,29 @@ function WorkloadChart({projects,tasks,pilots}){
   const [visible,setVisible]=useState(()=>Object.fromEntries(pilots.map(p=>[p.name,true])));
   useEffect(()=>{setVisible(v=>{const nv={...v};pilots.forEach(p=>{if(!(p.name in nv))nv[p.name]=true;});return nv;});},[pilots]);
   const activePilots=pilots.filter(p=>visible[p.name]);
-  const months=[]; const now=new Date(TODAY);
-  for(let i=-1;i<11;i++)months.push(new Date(now.getFullYear(),now.getMonth()+i,1));
-  const data=months.map(m=>{
-    const mEnd=new Date(m.getFullYear(),m.getMonth()+1,0);
+  const now=new Date(TODAY);
+  // Semaines : 13 en arrière, 13 en avant (27 semaines)
+  const wkList=[]; const startW=new Date(now);
+  const dow2=startW.getDay()||7; startW.setDate(startW.getDate()-dow2+1);
+  startW.setDate(startW.getDate()-13*7);
+  for(let i=0;i<27;i++){const d=new Date(startW);d.setDate(d.getDate()+i*7);wkList.push(d);}
+  function weekLabel(d){
+    const d2=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));
+    d2.setUTCDate(d2.getUTCDate()+4-(d2.getUTCDay()||7));
+    const wn=Math.ceil((((d2-new Date(Date.UTC(d2.getUTCFullYear(),0,1)))/86400000)+1)/7);
+    return "S"+wn;
+  }
+  const data=wkList.map(wStart=>{
+    const wEnd=new Date(wStart); wEnd.setDate(wEnd.getDate()+6);
+    const wS=wStart.toISOString().split("T")[0], wE=wEnd.toISOString().split("T")[0];
     const loads={};
     pilots.forEach(p=>{
-      const pW=projects.filter(pr=>(pr.pilot===p.name||pr.pilot2===p.name)&&pr.status!=="Terminé"&&pr.deadline&&new Date(pr.created_at||pr.deadline)<=mEnd&&new Date(pr.deadline)>=m).reduce((s,pr)=>s+(pr.weight||0),0);
-      const tW=tasks.filter(t=>(t.pilot===p.name||t.pilot2===p.name)&&t.status!=="Terminé"&&t.deadline&&new Date(t.created_at||t.deadline)<=mEnd&&new Date(t.deadline)>=m).reduce((s,t)=>s+(t.weight||0),0);
-      loads[p.name]=pW+tW;
+      const load=[...projects,...tasks].filter(item=>(item.pilot===p.name||item.pilot2===p.name)).reduce((s,item)=>s+taskLoadInPeriod(item,wS,wE),0);
+      loads[p.name]=Math.round(load);
     });
-    return{label:m.toLocaleDateString("fr-FR",{month:"short",year:"2-digit"}),month:m,loads};
+    return{label:weekLabel(wStart),wStart,loads};
   });
+  const todayWIdx=data.findIndex(d=>{const we=new Date(d.wStart);we.setDate(we.getDate()+6);return d.wStart.toISOString().split("T")[0]<=TODAY&&we.toISOString().split("T")[0]>=TODAY;});
   const W=680,CH=280,PL=45,PB=50,PT=20,PR=15;
   const cW=W-PL-PR,cH=CH-PB-PT;
   const maxV=Math.max(120,...data.flatMap(d=>activePilots.map(p=>d.loads[p.name]||0)));
@@ -510,7 +538,7 @@ function WorkloadChart({projects,tasks,pilots}){
   function yp(v){return PT+cH-(v/maxV*cH);}
   return(
     <div style={{background:"#fff",border:"1px solid #e0e0e0",borderRadius:10,padding:"14px",marginBottom:16}}>
-      <div style={{fontWeight:700,fontSize:13,color:"#111",marginBottom:10}}>Évolution de la charge sur 12 mois</div>
+      <div style={{fontWeight:700,fontSize:13,color:"#111",marginBottom:10}}>Évolution de la charge — semaine par semaine</div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
         {pilots.map((p,i)=>(
           <label key={p.id} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,cursor:"pointer",padding:"3px 8px",border:"1px solid",borderColor:visible[p.name]?GCOLS[i%GCOLS.length]:"#ddd",borderRadius:6,background:visible[p.name]?GCOLS[i%GCOLS.length]+"18":"#f9f9f9",userSelect:"none"}}>
@@ -538,13 +566,14 @@ function WorkloadChart({projects,tasks,pilots}){
               </g>)}
             </g>;
           })}
+          {todayWIdx>=0&&<line x1={PL+todayWIdx*colW+colW/2} y1={PT} x2={PL+todayWIdx*colW+colW/2} y2={CH-PB} stroke="#e24b4a" strokeWidth="1.5" strokeDasharray="4,3"/>}
           {data.map((d,i)=>{
             const x=PL+i*colW+colW/2;
-            const isNow=d.month.getMonth()===now.getMonth()&&d.month.getFullYear()===now.getFullYear();
+            const isNow=todayWIdx===i;
             return<g key={i}>
               <line x1={x} y1={PT} x2={x} y2={CH-PB} stroke="#ececec" strokeWidth="0.5"/>
-              <rect x={x-14} y={CH-PB+3} width={28} height={14} rx="3" fill={isNow?"#1a6bbf":"transparent"}/>
-              <text x={x} y={CH-PB+13} fontSize="8.5" fill={isNow?"#fff":"#666"} textAnchor="middle" fontWeight={isNow?"bold":"normal"}>{d.label}</text>
+              <rect x={x-10} y={CH-PB+3} width={20} height={14} rx="3" fill={isNow?"#1a6bbf":"transparent"}/>
+              <text x={x} y={CH-PB+13} fontSize="7.5" fill={isNow?"#fff":"#666"} textAnchor="middle" fontWeight={isNow?"bold":"normal"}>{d.label}</text>
             </g>;
           })}
           <line x1={PL} y1={PT} x2={PL} y2={CH-PB} stroke="#ccc" strokeWidth="1"/>
@@ -1611,6 +1640,29 @@ export default function App(){
         const pie=pilotPieSVG(p.name,96);
         const load=myT.filter(t=>t.status!=="Terminé").reduce((s,t)=>s+(t.weight||0),0);
         const loadCol=load>100?"#d9534f":load>80?"#BA7517":"#27500A";
+        // Todos filtrés sur la période
+        const myTd=(todos||[]).filter(td=>{
+          if(td.assigned_to!==p.name)return false;
+          if(!reportDateFrom&&!reportDateTo)return true;
+          if(!td.due_date)return true;
+          if(reportDateFrom&&td.due_date<reportDateFrom)return false;
+          if(reportDateTo&&td.due_date>reportDateTo)return false;
+          return true;
+        }).sort((a,b)=>(a.due_date||"9999")>(b.due_date||"9999")?1:-1);
+        const tdPending=myTd.filter(td=>!td.done);
+        const tdDone=myTd.filter(td=>td.done);
+        const todoSection=myTd.length?`
+          <div style="margin-top:8px;border-top:1px solid #eee;padding-top:6px">
+            <div style="font-size:8px;color:#BA7517;font-weight:700;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.4px">To-do list (${tdPending.length} en attente · ${tdDone.length} fait${tdDone.length>1?"s":""})</div>
+            ${myTd.map(td=>{
+              const od=!td.done&&td.due_date&&td.due_date<TODAY;
+              return`<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 4px;background:${td.done?"#f3fbee":"#fffbee"};border-radius:3px;margin-bottom:2px;font-size:8px;opacity:${td.done?0.7:1}">
+                <span style="font-weight:500;text-decoration:${td.done?"line-through":"none"};flex:1">${td.title}</span>
+                <span style="flex-shrink:0;margin-left:6px;background:${td.done?"#EAF3DE":od?"#FCEBEB":"#FAEEDA"};color:${td.done?"#27500A":od?"#791F1F":"#633806"};font-size:7px;font-weight:700;padding:1px 4px;border-radius:2px">${td.done?"✓ Fait":od?"⚠ Retard":"En attente"}</span>
+                ${td.due_date?`<span style="font-size:7px;color:${od?"#a32d2d":"#888"};margin-left:4px;flex-shrink:0">${fd(td.due_date)}</span>`:""}
+              </div>`;
+            }).join("")}
+          </div>`:"";
         return`
         <div class="pilot-card" style="border-top:3px solid ${col}">
           <div style="font-weight:700;font-size:11px;color:${col};margin-bottom:8px;display:flex;align-items:center;gap:6px">
@@ -1631,6 +1683,7 @@ export default function App(){
             <div style="font-weight:700;font-size:15px;color:${delay.color}">${delay.value}</div>
             <div style="color:${delay.color};font-size:9px">${delay.label}${delay.count?` · ${delay.count} tâche${delay.count>1?"s":""} clôturée${delay.count>1?"s":""}`:""}</div>
           </div>
+          ${todoSection}
         </div>`;
       }).join("")}
       </div>
@@ -1649,7 +1702,7 @@ export default function App(){
 
     // ── Détail projets ──
     const projRows=projects.map((p,pi)=>{
-      const pt=tasks.filter(t=>t.project_id===p.id);
+      const pt=tasks.filter(t=>t.project_id===p.id).sort((a,b)=>(a.deadline||"9999")>(b.deadline||"9999")?1:-1);
       const prog=calcProgress(p.id,tasks);
       const od=isOD(p.deadline,p.status);
       const col=GCOLS[pi%GCOLS.length];
@@ -1664,7 +1717,7 @@ export default function App(){
           <div style="text-align:right;font-size:9px;color:#666;line-height:1.8">
             <div>Pilote : <b>${p.pilot}</b>${p.pilot2?` <span style="color:#888;font-size:8px">+ ${p.pilot2}</span>`:""}</div>
             <div style="${od?"color:#d9534f;font-weight:700":""}">Échéance : ${fd(p.deadline)}${od?" ⚠":""}</div>
-            <div>${done}/${pt.length} tâche${pt.length>1?"s":""} terminée${done>1?"s":""}</div>
+            <div>${done}/${pt.length} tâche${pt.length>1?"s":""} terminée${pt.length>1?"s":""}</div>
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
