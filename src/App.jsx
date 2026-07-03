@@ -609,7 +609,7 @@ function buildChargeSVG(projects,tasks,pilots,W=700){
     });
     return{label:weekLabel(wStart),wStart,loads};
   });
-  const CH=280,PL=45,PB=50,PT=20,PR=15;
+  const CH=250,PL=45,PB=26,PT=20,PR=15;
   const cW=W-PL-PR,cH=CH-PB-PT;
   const maxV=Math.max(120,...data.flatMap(d=>Object.values(d.loads)));
   const colW=cW/data.length;
@@ -648,12 +648,6 @@ function buildChargeSVG(projects,tasks,pilots,W=700){
   svg+=`<line x1="${PL}" y1="${PT}" x2="${PL}" y2="${CH-PB}" stroke="#ccc" stroke-width="1"/>`;
   svg+=`<line x1="${PL}" y1="${CH-PB}" x2="${W-PR}" y2="${CH-PB}" stroke="#ccc" stroke-width="1"/>`;
   svg+=`<text x="${W-PR}" y="${yp(100)-4}" font-size="8" fill="#e24b4a" text-anchor="end">Seuil 100%</text>`;
-  pilots.forEach((p,pi)=>{
-    const col=GCOLS[pi%GCOLS.length];
-    const lx=PL+(pi*(cW/pilots.length));
-    svg+=`<circle cx="${lx+6}" cy="${CH-8}" r="4" fill="${col}"/>`;
-    svg+=`<text x="${lx+13}" y="${CH-4}" font-size="8" fill="#333">${p.name.split(" ")[0]}</text>`;
-  });
   svg+=`</svg>`;
   return svg;
 }
