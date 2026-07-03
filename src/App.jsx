@@ -343,10 +343,13 @@ function buildGanttSVG(projects, tasks, W=800){
       svg+=`<text x="${LW-27}" y="${y+16}" font-size="7" fill="${sc.tx}" font-weight="bold" text-anchor="middle">${item.status}</text>`;
     }
     if(item.deadline){
-      svg+=`<rect x="${x1}" y="${y+6}" width="${Math.max(x2-x1,3)}" height="${RH-12}" rx="3" fill="${col}${isP?"28":"18"}" stroke="${col}" stroke-width="${isP?"1.5":"1"}"/>`;
+      const doneT=!isP&&item.status==="Terminé";
+      const gc=doneT?"#27ae60":col;
+      svg+=`<rect x="${x1}" y="${y+6}" width="${Math.max(x2-x1,3)}" height="${RH-12}" rx="3" fill="${gc}${isP?"28":"18"}" stroke="${gc}" stroke-width="${isP?"1.5":"1"}"/>`;
       if(isP&&pw>0)svg+=`<rect x="${x1}" y="${y+6}" width="${pw}" height="${RH-12}" rx="3" fill="${col}"/>`;
       if(isP&&pw>14)svg+=`<text x="${x1+pw/2}" y="${y+RH/2+3.5}" font-size="7.5" fill="#fff" font-weight="bold" text-anchor="middle">${prog}%</text>`;
-      if(!isP)svg+=`<rect x="${x1}" y="${y+9}" width="${Math.max(x2-x1,3)}" height="${RH-18}" rx="2" fill="${col}"/>`;
+      if(!isP)svg+=`<rect x="${x1}" y="${y+9}" width="${Math.max(x2-x1,3)}" height="${RH-18}" rx="2" fill="${gc}"/>`;
+      if(doneT)svg+=`<text x="${x1+Math.max(x2-x1,3)/2}" y="${y+RH/2+3.5}" font-size="8" fill="#fff" font-weight="bold" text-anchor="middle">✓</text>`;
     }
   });
   svg+=`<line x1="${todayX}" y1="0" x2="${todayX}" y2="${TH}" stroke="#e24b4a" stroke-width="1.5" stroke-dasharray="4,3"/>`;
@@ -454,7 +457,14 @@ function buildChargeSVG(projects,tasks,pilots,W=700){
     const wS=wStart.toISOString().split("T")[0], wE=wEnd.toISOString().split("T")[0];
     const loads={};
     pilots.forEach(p=>{
-      const load=[...projects,...tasks].filter(item=>(item.pilot===p.name||item.pilot2===p.name)).reduce((s,item)=>s+taskLoadInPeriod(item,wS,wE),0);
+      const load=[...projects,...tasks].filter(item=>{
+        if(item.pilot!==p.name&&item.pilot2!==p.name)return false;
+        if(item.status==="Terminé")return false;
+        const iS=item.created_at||item.deadline;
+        const iE=item.deadline||item.created_at;
+        if(!iS||!iE)return false;
+        return iS<=wE&&iE>=wS;
+      }).reduce((s,item)=>s+(item.weight||0),0);
       loads[p.name]=Math.round(load);
     });
     return{label:weekLabel(wStart),wStart,loads};
@@ -529,7 +539,14 @@ function WorkloadChart({projects,tasks,pilots}){
     const wS=wStart.toISOString().split("T")[0], wE=wEnd.toISOString().split("T")[0];
     const loads={};
     pilots.forEach(p=>{
-      const load=[...projects,...tasks].filter(item=>(item.pilot===p.name||item.pilot2===p.name)).reduce((s,item)=>s+taskLoadInPeriod(item,wS,wE),0);
+      const load=[...projects,...tasks].filter(item=>{
+        if(item.pilot!==p.name&&item.pilot2!==p.name)return false;
+        if(item.status==="Terminé")return false;
+        const iS=item.created_at||item.deadline;
+        const iE=item.deadline||item.created_at;
+        if(!iS||!iE)return false;
+        return iS<=wE&&iE>=wS;
+      }).reduce((s,item)=>s+(item.weight||0),0);
       loads[p.name]=Math.round(load);
     });
     return{label:weekLabel(wStart),wStart,loads};
@@ -678,10 +695,14 @@ function PilotCard({pilot,projects,tasks,todos,dateFrom,dateTo}){
   const pStart=dateFrom||TODAY, pEnd=dateTo||TODAY;
   function inRange(item){
     if(!dateFrom&&!dateTo)return true;
-    const raw=item.deadline||item.created_at; if(!raw)return true;
-    const d=new Date(raw);
-    if(dateFrom&&d<new Date(dateFrom))return false;
-    if(dateTo&&d>new Date(dateTo))return false;
+    // Chevauchement : l'item est dans la période si son intervalle [start,end] chevauche [dateFrom,dateTo]
+    const iStart=item.created_at||item.deadline;
+    const iEnd=item.deadline||item.created_at;
+    if(!iStart&&!iEnd)return true;
+    // item finit avant le début de la période → exclu
+    if(dateTo&&iStart&&iStart>dateTo)return false;
+    // item commence après la fin de la période → exclu
+    if(dateFrom&&iEnd&&iEnd<dateFrom)return false;
     return true;
   }
   const pAll=projects.filter(p=>(p.pilot===pilot||p.pilot2===pilot)&&inRange(p));
