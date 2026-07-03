@@ -1729,13 +1729,105 @@ export default function App(){
       </table>
     </div>`:"";
 
-    // ── Gantt SVG ──
-    const {svg:ganttSvg}=buildGanttSVG(projects,tasks,980);
+    // ── Gantt par projet (un bloc no-break par projet) ──
+    function buildProjectGanttSVG(proj, projTasks, W=960){
+      const startDate=new Date(TODAY); startDate.setMonth(startDate.getMonth()-1); startDate.setDate(1);
+      const endDate=new Date(startDate); endDate.setFullYear(endDate.getFullYear()+1);
+      const LW=180, DW=(W-LW-10)/(endDate-startDate)*86400000, RH=24, HH=44;
+      function xp(ds){if(!ds)return LW;const days=(new Date(ds)-startDate)/86400000;return LW+Math.max(0,Math.min((W-LW-10),days*DW));}
+      const months=[]; const mc=new Date(startDate);
+      while(mc<endDate){months.push(new Date(mc));mc.setMonth(mc.getMonth()+1);}
+      const weeks=[]; const wc=new Date(startDate);
+      const wd=wc.getDay(); wc.setDate(wc.getDate()+(wd===0?1:wd===1?0:8-wd));
+      while(wc<endDate){
+        const d=new Date(Date.UTC(wc.getFullYear(),wc.getMonth(),wc.getDate()));
+        d.setUTCDate(d.getUTCDate()+4-(d.getUTCDay()||7));
+        const wn=Math.ceil((((d-new Date(Date.UTC(d.getUTCFullYear(),0,1)))/86400000)+1)/7);
+        weeks.push({date:new Date(wc),num:wn}); wc.setDate(wc.getDate()+7);
+      }
+      const rows=[{type:"p",data:proj},...projTasks.sort((a,b)=>(a.deadline||"9999")>(b.deadline||"9999")?1:-1).map(t=>({type:"t",data:t}))];
+      const TH=HH+rows.length*RH+4;
+      const todayX=xp(TODAY);
+      const pi=projects.findIndex(p=>p.id===proj.id);
+      const projCol=GCOLS[pi%GCOLS.length];
+      let svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${TH}" style="font-family:Arial,sans-serif">`;
+      svg+=`<rect width="${W}" height="${TH}" fill="#fafafa" rx="3"/>`;
+      months.forEach((m,i)=>{
+        const x1=xp(m.toISOString().split("T")[0]);
+        const nx=new Date(m); nx.setMonth(nx.getMonth()+1);
+        const x2=xp(nx.toISOString().split("T")[0]);
+        svg+=`<rect x="${x1}" y="${HH}" width="${x2-x1}" height="${TH-HH}" fill="${i%2===0?"#f8f8f8":"#f2f2f2"}"/>`;
+      });
+      weeks.forEach(w=>{const x=xp(w.date.toISOString().split("T")[0]);svg+=`<line x1="${x}" y1="${HH}" x2="${x}" y2="${TH}" stroke="#e0e0e0" stroke-width="0.5"/>`;});
+      svg+=`<rect x="0" y="0" width="${W}" height="26" fill="#1a6bbf"/>`;
+      months.forEach((m,i)=>{
+        const x1=xp(m.toISOString().split("T")[0]);
+        const nx=new Date(m); nx.setMonth(nx.getMonth()+1);
+        const x2=xp(nx.toISOString().split("T")[0]);
+        const mw=x2-x1;
+        svg+=`<line x1="${x1}" y1="0" x2="${x1}" y2="26" stroke="rgba(255,255,255,0.3)" stroke-width="0.5"/>`;
+        if(mw>24)svg+=`<text x="${x1+mw/2}" y="17" font-size="9" fill="#fff" font-weight="bold" text-anchor="middle">${m.toLocaleDateString("fr-FR",{month:"short",year:"2-digit"})}</text>`;
+      });
+      svg+=`<rect x="0" y="26" width="${W}" height="18" fill="#eef3fa"/>`;
+      weeks.forEach(w=>{
+        const x=xp(w.date.toISOString().split("T")[0]);
+        svg+=`<line x1="${x}" y1="26" x2="${x}" y2="44" stroke="#ccc" stroke-width="0.5"/>`;
+        if(DW*7>14)svg+=`<text x="${x+2}" y="38" font-size="7" fill="#888">S${w.num}</text>`;
+      });
+      svg+=`<rect x="0" y="0" width="${LW}" height="${HH}" fill="#1558a0"/>`;
+      svg+=`<text x="8" y="28" font-size="9.5" fill="#fff" font-weight="bold">Projet / Tâche</text>`;
+      svg+=`<line x1="0" y1="${HH}" x2="${W}" y2="${HH}" stroke="#ccc" stroke-width="1"/>`;
+      rows.forEach((row,i)=>{
+        const y=HH+i*RH; const isP=row.type==="p"; const item=row.data;
+        const col=isP?projCol:"#94a3b8";
+        const x1=xp(item.created_at); const x2=Math.max(xp(item.deadline),x1+3);
+        const prog=isP?calcProgress(item.id,tasks):0;
+        const pw=(x2-x1)*prog/100;
+        const nm=item.name.length>(isP?26:24)?item.name.slice(0,isP?24:22)+"...":item.name;
+        const sc=SC[item.status]||{bg:"#eee",tx:"#333"};
+        svg+=`<rect x="0" y="${y}" width="${W}" height="${RH}" fill="${i%2===0?"#fff":"#fafafa"}"/>`;
+        svg+=`<line x1="0" y1="${y+RH}" x2="${W}" y2="${y+RH}" stroke="#f0f0f0" stroke-width="0.5"/>`;
+        svg+=`<rect x="0" y="${y}" width="${LW}" height="${RH}" fill="${isP?"#f8faff":"#f2f5ff"}"/>`;
+        svg+=`<line x1="${LW}" y1="${y}" x2="${LW}" y2="${y+RH}" stroke="#ddd" stroke-width="1"/>`;
+        svg+=`<text x="${isP?8:20}" y="${y+RH/2+3.5}" font-size="${isP?9.5:8.5}" fill="${isP?"#111":"#555"}" font-weight="${isP?"bold":"normal"}">${isP?"":"↳ "}${nm}</text>`;
+        if(isP){
+          svg+=`<rect x="${LW-48}" y="${y+5}" width="42" height="13" rx="3" fill="${sc.bg}"/>`;
+          svg+=`<text x="${LW-27}" y="${y+14}" font-size="6.5" fill="${sc.tx}" font-weight="bold" text-anchor="middle">${item.status}</text>`;
+        }
+        if(item.deadline){
+          const doneT=!isP&&item.status==="Terminé";
+          const gc=doneT?"#27ae60":col;
+          svg+=`<rect x="${x1}" y="${y+5}" width="${Math.max(x2-x1,3)}" height="${RH-10}" rx="3" fill="${gc}${isP?"28":"18"}" stroke="${gc}" stroke-width="${isP?"1.5":"1"}"/>`;
+          if(isP&&pw>0)svg+=`<rect x="${x1}" y="${y+5}" width="${pw}" height="${RH-10}" rx="3" fill="${col}"/>`;
+          if(isP&&pw>14)svg+=`<text x="${x1+pw/2}" y="${y+RH/2+3}" font-size="7" fill="#fff" font-weight="bold" text-anchor="middle">${prog}%</text>`;
+          if(!isP)svg+=`<rect x="${x1}" y="${y+7}" width="${Math.max(x2-x1,3)}" height="${RH-14}" rx="2" fill="${gc}"/>`;
+          if(doneT)svg+=`<text x="${x1+Math.max(x2-x1,3)/2}" y="${y+RH/2+3}" font-size="8" fill="#fff" font-weight="bold" text-anchor="middle">&#10003;</text>`;
+        }
+      });
+      svg+=`<line x1="${todayX}" y1="0" x2="${todayX}" y2="${TH}" stroke="#e24b4a" stroke-width="1.5" stroke-dasharray="4,3"/>`;
+      svg+=`</svg>`;
+      return svg;
+    }
+
     const ganttBlock=`
-    <div class="section-block">
-      <div class="section-title">📅 Diagramme de Gantt</div>
-      <div style="overflow:hidden">${ganttSvg}</div>
-    </div>`;
+    <div style="font-size:12px;font-weight:700;color:#1a6bbf;padding-bottom:5px;border-bottom:2px solid #1a6bbf;margin-bottom:10px">📅 Diagramme de Gantt</div>
+    ${projects.map(proj=>{
+      const projTasks=tasks.filter(t=>t.project_id===proj.id);
+      const pi=projects.findIndex(p=>p.id===proj.id);
+      const col=GCOLS[pi%GCOLS.length];
+      const sc=SC[proj.status]||{bg:"#eee",tx:"#333"};
+      const prog=calcProgress(proj.id,tasks);
+      return`<div class="no-break" style="margin-bottom:8px;border:1px solid #dde3f0;border-radius:8px;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#f8faff;border-bottom:1px solid #dde3f0">
+          <span style="width:10px;height:10px;border-radius:50%;background:${col};flex-shrink:0;display:inline-block"></span>
+          <span style="font-weight:700;font-size:10px;flex:1">${proj.name}</span>
+          <span style="background:${sc.bg};color:${sc.tx};font-size:8px;font-weight:700;padding:2px 7px;border-radius:4px">${proj.status}</span>
+          <span style="font-size:9px;color:#666">${proj.pilot}${proj.pilot2?" + "+proj.pilot2:""}</span>
+          <span style="font-size:9px;color:#1a6bbf;font-weight:700">${prog}%</span>
+        </div>
+        <div style="overflow:hidden">${buildProjectGanttSVG(proj,projTasks,960)}</div>
+      </div>`;
+    }).join("")}`;
 
     // ── Camembert pilote (SVG inline) ──
     function pilotPieSVG(pilotName,size=100){
@@ -2056,6 +2148,9 @@ export default function App(){
 
       ${kpiBlock}
       ${odBlock}
+
+      <div class="page-break"></div>
+
       ${ganttBlock}
 
       <div class="page-break"></div>
