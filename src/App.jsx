@@ -1705,6 +1705,10 @@ export default function App(){
         <div class="kpi-label">Avancement moyen</div>
         <div class="kpi-value" style="color:#BA7517">${avgN}%</div>
       </div>
+      <div class="kpi-card" style="border-top:3px solid #D85A30">
+        <div class="kpi-label">Tâches à faire</div>
+        <div class="kpi-value" style="color:#D85A30">${tasks.filter(t=>t.status!=="Terminé").length}</div>
+      </div>
       <div class="kpi-card" style="border-top:3px solid ${todoPendingN>0?"#BA7517":"#27500A"}">
         <div class="kpi-label">To-do à faire</div>
         <div class="kpi-value" style="color:${todoPendingN>0?"#BA7517":"#27500A"}">${todoPendingN}</div>
@@ -2114,7 +2118,7 @@ export default function App(){
       .report-sub{font-size:9.5px;opacity:0.82;line-height:1.6}
       .report-month{background:rgba(255,255,255,0.18);border-radius:8px;padding:8px 16px;text-align:center;font-size:10px;font-weight:600;border:1px solid rgba(255,255,255,0.25)}
       .report-month span{font-size:15px;font-weight:700;display:block;line-height:1.5;white-space:nowrap}
-      .kpi-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:14px}
+      .kpi-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-bottom:14px}
       .kpi-card{background:#fff;border:1px solid #dde3f0;border-radius:8px;padding:10px 10px 8px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,0.06)}
       .kpi-label{font-size:8px;color:#777;margin-bottom:5px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px}
       .kpi-value{font-size:24px;font-weight:700;line-height:1}
@@ -2201,7 +2205,7 @@ export default function App(){
         </div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
           <button style={ss.btnS} onClick={fetchAll}>↻</button>
-          <button style={ss.btnS} onClick={()=>setPilotsModal(true)}>👥 Pilotes</button>
+          <button style={ss.btnS} onClick={()=>setPilotsModal(true)}>👥 Pilotes &amp; Centres</button>
           <button style={ss.btnS} onClick={()=>setChangePwdModal(true)}>🔑</button>
           <button style={ss.btnS} onClick={()=>setGantt(true)}>Gantt</button>
           <button style={{...ss.btnS,background:"#1D9E75",color:"#fff",border:"none"}} onClick={()=>setReunionModal(true)}>🗓 Réunion de service</button>
