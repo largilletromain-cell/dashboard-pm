@@ -1867,8 +1867,8 @@ export default function App(){
 
     // ── Cards pilotes — chaque card a page-break-inside:avoid ──
     const pilotsBlock=`
-    <div class="section-block">
-      <div class="section-title">👥 Statistiques pilotes</div>
+    <div style="margin-bottom:12px">
+      <div style="font-size:12px;font-weight:700;color:#1a6bbf;padding-bottom:5px;border-bottom:2px solid #1a6bbf;margin-bottom:10px">👥 Statistiques pilotes</div>
       <div class="pilots-grid">
       ${pilots.map((p,pi)=>{
         const col=GCOLS[pi%GCOLS.length];
@@ -1977,8 +1977,8 @@ export default function App(){
     // ── Courbe de charge ──
     const chargeSvg=buildChargeSVG(projects,tasks,pilots,970);
     const chargeBlock=`
-    <div class="section-block">
-      <div class="section-title">📈 Évolution de la charge — 12 mois</div>
+    <div style="margin-bottom:12px">
+      <div style="font-size:12px;font-weight:700;color:#1a6bbf;padding-bottom:5px;border-bottom:2px solid #1a6bbf;margin-bottom:10px">📈 Évolution de la charge — 12 mois</div>
       ${chargeSvg}
       <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:8px">
         ${pilots.map((p,i)=>`<span style="display:flex;align-items:center;gap:5px;font-size:9px"><span style="width:10px;height:10px;border-radius:50%;background:${GCOLS[i%GCOLS.length]};display:inline-block"></span>${p.name}</span>`).join("")}
@@ -2106,7 +2106,6 @@ export default function App(){
         .page-break{page-break-before:always;break-before:always}
         .section-block{page-break-inside:avoid;break-inside:avoid}
         .pilot-card{page-break-inside:avoid;break-inside:avoid}
-        .pilots-grid{break-inside:avoid}
       }
       .page{background:#fff;max-width:1020px;margin:0 auto;padding:16px 20px}
       .report-header{background:linear-gradient(135deg,#1a6bbf 0%,#0d3f7a 100%);color:#fff;border-radius:10px;padding:14px 22px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center}
