@@ -1030,7 +1030,7 @@ function TodoForm({data,pilots,onSave,onClose}){
   );
 }
 
-function TodoView({pilots,todos,onRefresh}){
+function TodoView({pilots,todos,onRefresh,readOnly=false}){
   const [modal,setModal]=useState(null);
   const [sortBy,setSortBy]=useState("date"); // "date" | "status"
 
@@ -1085,7 +1085,7 @@ function TodoView({pilots,todos,onRefresh}){
           <span style={{fontSize:11,color:"#666"}}>Trier :</span>
           <button onClick={()=>setSortBy("date")} style={{...ss.btnS,fontSize:11,padding:"3px 9px",background:sortBy==="date"?"#e8f0fb":"#f0f0f0",color:sortBy==="date"?"#1a6bbf":"#333",fontWeight:sortBy==="date"?700:400}}>Par date</button>
           <button onClick={()=>setSortBy("status")} style={{...ss.btnS,fontSize:11,padding:"3px 9px",background:sortBy==="status"?"#e8f0fb":"#f0f0f0",color:sortBy==="status"?"#1a6bbf":"#333",fontWeight:sortBy==="status"?700:400}}>Par statut</button>
-          <button style={ss.btnP} onClick={()=>setModal({mode:"add",data:{...ET_TODO}})}>+ Ajouter</button>
+          <button style={{...ss.btnP,...(readOnly?{opacity:0.35,cursor:'not-allowed',pointerEvents:'none'}:{})}} onClick={()=>!readOnly&&setModal({mode:"add",data:{...ET_TODO}})} title={readOnly?"Mode lecture seule":""}>+ Ajouter</button>
         </div>
       </div>
 
@@ -1108,7 +1108,7 @@ function TodoView({pilots,todos,onRefresh}){
               {todo.notes&&<div style={{fontSize:11,color:"#666",marginTop:3,whiteSpace:"pre-wrap"}}>{todo.notes}</div>}
             </div>
             <div style={{display:"flex",gap:6,flexShrink:0}}>
-              <button style={ss.btnS} onClick={()=>setModal({mode:"edit",data:{...todo}})}>Modifier</button>
+              <button style={{...ss.btnS,...(readOnly?{opacity:0.35,cursor:'not-allowed',pointerEvents:'none'}:{})}} onClick={()=>!readOnly&&setModal({mode:"edit",data:{...todo}})} title={readOnly?"Mode lecture seule":""}>Modifier</button>
               <button style={{...ss.btnD,...(readOnly?{opacity:0.35,cursor:'not-allowed',pointerEvents:'none'}:{})}} onClick={()=>!readOnly&&delTodo(todo.id)}>Suppr.</button>
             </div>
           </div>
@@ -2284,7 +2284,7 @@ export default function App(){
         ))}
       </div>
 
-      {view==="todo"&&<TodoView pilots={pilots} todos={todos} onRefresh={fetchAll}/> }
+      {view==="todo"&&<TodoView pilots={pilots} todos={todos} onRefresh={fetchAll} readOnly={readOnly}/>}
       {view==="stats"&&<StatsView projects={projects} tasks={tasks} pilots={pilots} todos={todos} dateFrom={reportDateFrom} setDateFrom={setReportDateFrom} dateTo={reportDateTo} setDateTo={setReportDateTo}/>}
 
       {view!=="stats"&&view!=="todo"&&<>
