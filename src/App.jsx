@@ -65,10 +65,13 @@ function LoginScreen({onLogin}){
               autoFocus
             />
             {err&&<div style={{color:"#d9534f",fontSize:11,marginBottom:8}}>Mot de passe incorrect.</div>}
-            <button type="submit" style={{width:"100%",padding:"10px",background:"linear-gradient(135deg,#1a6bbf,#0d3f7a)",color:"#fff",border:"none",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",marginBottom:10}}>
+            <button type="submit" style={{width:"100%",padding:"10px",background:"linear-gradient(135deg,#1a6bbf,#0d3f7a)",color:"#fff",border:"none",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",marginBottom:8}}>
               Accéder à l&apos;application
             </button>
-            <button type="button" onClick={()=>setShowChange(true)} style={{width:"100%",padding:"7px",background:"none",color:"#888",border:"1px solid #ddd",borderRadius:8,fontSize:11,cursor:"pointer"}}>
+            <button type="button" onClick={()=>onLogin(true)} style={{width:"100%",padding:"8px",background:"#f5f5f5",color:"#555",border:"1px solid #ddd",borderRadius:8,fontSize:12,cursor:"pointer",marginBottom:8}}>
+              👁 Accès lecture seule
+            </button>
+            <button type="button" onClick={()=>setShowChange(true)} style={{width:"100%",padding:"7px",background:"none",color:"#aaa",border:"none",borderRadius:8,fontSize:11,cursor:"pointer"}}>
               Changer le mot de passe
             </button>
           </form>
@@ -136,11 +139,14 @@ function taskLoadInPeriod(task, pStart, pEnd){
 }
 
 function taskDelay(task){
+  // Retourne un score : 1.0 = 100% (pile dans les délais)
+  // > 1.0 = en avance (ex: 1.2 = 120%), < 1.0 = en retard (ex: 0.8 = 80%)
   if(!task.completion_date || !task.deadline || !task.created_at) return null;
   const start=new Date(task.created_at), due=new Date(task.deadline), done=new Date(task.completion_date);
   const denom=(due-start)/86400000;
   if(denom<=0) return null;
-  return ((done-due)/86400000)/denom;
+  const ecart=(done-due)/86400000; // positif=retard, négatif=avance
+  return 1-(ecart/denom); // 100% si pile, >100% si avance, <100% si retard
 }
 
 const ss={
@@ -858,9 +864,9 @@ function PilotCard({pilot,projects,tasks,todos,dateFrom,dateTo}){
     .filter(t=>{const raw=t.deadline||t.created_at;if(!raw)return true;const d=new Date(raw);if(dateFrom&&d<new Date(dateFrom))return false;if(dateTo&&d>new Date(dateTo))return false;return true;})
     .map(t=>taskDelay(t))
     .filter(v=>v!==null);
-  const avgDelay = delays.length ? delays.reduce((s,v)=>s+v,0)/delays.length : null;
-  const delayColor = avgDelay===null ? "#888" : avgDelay<=0 ? "#27500A" : avgDelay<0.2 ? "#BA7517" : "#a32d2d";
-  const delayLabel = avgDelay===null ? "Pas de donnée" : avgDelay<=0 ? "En avance / à l'heure" : "En retard";
+  const avgScore = delays.length ? delays.reduce((s,v)=>s+v,0)/delays.length : null;
+  const delayColor = avgScore===null ? "#888" : avgScore>=1 ? "#27500A" : avgScore>=0.8 ? "#BA7517" : "#a32d2d";
+  const delayLabel = avgScore===null ? "Pas de données" : avgScore>=1 ? "Délais respectés ✓" : avgScore>=0.8 ? "Léger retard" : "Retard important";
   return(
     <div style={{background:"#fff",border:"1px solid #e0e0e0",borderRadius:10,padding:"12px 14px",marginBottom:12}}>
       <div style={{fontWeight:700,fontSize:14,marginBottom:10,paddingBottom:6,borderBottom:"2px solid #1a6bbf",display:"flex",alignItems:"center",gap:8}}>
@@ -875,7 +881,7 @@ function PilotCard({pilot,projects,tasks,todos,dateFrom,dateTo}){
         <div style={{background:"#f8faff",borderRadius:8,padding:"10px 12px",display:"flex",flexDirection:"column",justifyContent:"center"}}>
           <div style={{fontSize:11,fontWeight:600,color:"#1a6bbf",marginBottom:8}}>Indicateur de respect des délais</div>
           <div style={{fontSize:26,fontWeight:700,color:delayColor,marginBottom:2}}>
-            {avgDelay===null?"—":(avgDelay>0?"+":"")+(avgDelay*100).toFixed(0)+"%"}
+            {avgScore===null?"—":(avgScore*100).toFixed(0)+"%"}
           </div>
           <div style={{fontSize:11,color:delayColor,fontWeight:600}}>{delayLabel}</div>
           <div style={{fontSize:10,color:"#999",marginTop:4}}>{delays.length} tâche{delays.length>1?"s":""} terminée{delays.length>1?"s":""} avec date de fin renseignée</div>
@@ -1613,6 +1619,7 @@ export default function App(){
   const [todos,setTodos]=useState([]);
   const [sites,setSites]=useState(SITES);
   const [loading,setLoading]=useState(true);
+  const [loadError,setLoadError]=useState(false);
   const [view,setView]=useState("projects");
   const [fSt,setFSt]=useState(""); const [fPil,setFPil]=useState(""); const [fSite,setFSite]=useState("");
   const [fTPrj,setFTPrj]=useState(""); const [fTSt,setFTSt]=useState(""); const [fTSite,setFTSite]=useState("");
@@ -1623,10 +1630,16 @@ export default function App(){
   const [reportDateTo,setReportDateTo]=useState(()=>{const d=new Date(TODAY);d.setMonth(d.getMonth()+3);return d.toISOString().split("T")[0];});
 
   const fetchAll=useCallback(async()=>{
-    setLoading(true);
-    const [p,t,pl,td,si]=await Promise.all([sbGet("projects"),sbGet("tasks"),sbGet("pilots","*&order=position"),sbGet("todos"),sbGet("sites","*&order=position")]);
-    setProjects(Array.isArray(p)?p:[]); setTasks(Array.isArray(t)?t:[]); setPilots(Array.isArray(pl)?pl:[]); setTodos(Array.isArray(td)?td:[]); setSites(Array.isArray(si)&&si.length?si.map(s=>s.name):SITES);
-    setLoading(false);
+    setLoading(true); setLoadError(false);
+    try{
+      const [p,t,pl,td,si]=await Promise.all([sbGet("projects"),sbGet("tasks"),sbGet("pilots","*&order=position"),sbGet("todos"),sbGet("sites","*&order=position")]);
+      setProjects(Array.isArray(p)?p:[]); setTasks(Array.isArray(t)?t:[]); setPilots(Array.isArray(pl)?pl:[]); setTodos(Array.isArray(td)?td:[]); setSites(Array.isArray(si)&&si.length?si.map(s=>s.name):SITES);
+    }catch(e){
+      console.error("fetchAll error",e);
+      setLoadError(true);
+    }finally{
+      setLoading(false);
+    }
   },[]);
   useEffect(()=>{fetchAll();},[fetchAll]);
 
@@ -1678,7 +1691,7 @@ export default function App(){
   function sortIcon(k){return sortKey!==k?"↕":sortDir==="asc"?"↑":"↓";}
 
   const fp=applySort(projects.filter(p=>(!fSt||p.status===fSt)&&(!fPil||p.pilot===fPil)&&(!fSite||p.site===fSite)),sortKey,sortDir);
-  const ft=applySort(tasks.filter(t=>(!fTPrj||t.project_id===Number(fTPrj))&&(!fTSt||t.status===fTSt)&&(!fPil||t.pilot===fPil)&&(!fTSite||t.site===fTSite)),sortKey,sortDir);
+  const ft=applySort(tasks.filter(t=>(!fTPrj||t.project_id===Number(fTPrj))&&(!fTSt||t.status===fTSt)&&(!fPil||(t.pilot===fPil||t.pilot2===fPil))&&(!fTSite||t.site===fTSite)),sortKey,sortDir);
   const activeN=projects.filter(p=>p.status!=="Terminé").length;
   const odN=tasks.filter(t=>isOD(t.deadline,t.status)).length;
   const doneN=tasks.filter(t=>t.status==="Terminé").length;
@@ -1872,12 +1885,12 @@ export default function App(){
     // ── Indicateur délais ──
     function delayInfo(pilotName){
       const d=tasks.filter(t=>(t.pilot===pilotName||t.pilot2===pilotName)&&t.status==="Terminé"&&t.completion_date).map(t=>taskDelay(t)).filter(v=>v!==null);
-      if(!d.length)return{label:"Pas de donnée",value:"—",color:"#888",count:0};
+      if(!d.length)return{label:"Pas de données",value:"—",color:"#888",count:0};
       const avg=d.reduce((s,v)=>s+v,0)/d.length;
       return{
-        label:avg<=0?"En avance / à l'heure":avg<0.2?"Léger retard":"En retard",
-        value:(avg>0?"+":"")+(avg*100).toFixed(0)+"%",
-        color:avg<=0?"#27500A":avg<0.2?"#BA7517":"#d9534f",
+        label:avg>=1?"Délais respectés ✓":avg>=0.8?"Léger retard":"Retard important",
+        value:(avg*100).toFixed(0)+"%",
+        color:avg>=1?"#27500A":avg>=0.8?"#BA7517":"#d9534f",
         count:d.length
       };
     }
@@ -2035,7 +2048,10 @@ export default function App(){
             const tod=isOD(t.deadline,t.status);
             const sc2=SC[t.status]||{bg:"#eee",tx:"#333"};
             return`<tr>
-              <td style="font-weight:500">${t.name}${t.notes?` <span style="color:#BA7517">📝</span>`:""}</td>
+              <td style="font-weight:500">
+                ${t.name}
+                ${t.notes?`<div style="font-size:7.5px;color:#7a6000;background:#fffbee;border:1px solid #f0e68c;border-radius:3px;padding:2px 5px;margin-top:2px;white-space:pre-wrap;line-height:1.4">📝 ${t.notes}</div>`:""}
+              </td>
               <td>${badge(t.status,sc2.bg,sc2.tx)}</td>
               <td>${t.pilot}${t.pilot2?` <span style="color:#888;font-size:8px">+${t.pilot2}</span>`:""}</td>
               <td style="text-align:center">${(t.weight||0)>0?`<span style="background:#f0f0f0;font-size:8px;padding:1px 5px;border-radius:3px">${t.weight}%</span>`:"—"}</td>
@@ -2196,9 +2212,20 @@ export default function App(){
     </div></body></html>`;
   }
 
-  if(!authed)return <LoginScreen onLogin={()=>{sessionStorage.setItem("app_authed","1");setAuthed(true);}}/>;
+  if(!authed)return <LoginScreen onLogin={(ro)=>{sessionStorage.setItem("app_authed","1");sessionStorage.setItem("app_readonly",ro?"1":"0");setAuthed(true);}}/>;
+  const readOnly=sessionStorage.getItem("app_readonly")==="1";
 
   if(loading)return <Spinner/>;
+  if(loadError)return(
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Arial,sans-serif",background:"#f5f7fa"}}>
+      <div style={{background:"#fff",borderRadius:12,padding:"32px 36px",maxWidth:400,textAlign:"center",boxShadow:"0 4px 24px rgba(0,0,0,0.10)"}}>
+        <div style={{fontSize:36,marginBottom:12}}>⚠️</div>
+        <div style={{fontWeight:700,fontSize:15,color:"#111",marginBottom:8}}>Impossible de charger les données</div>
+        <div style={{fontSize:12,color:"#666",marginBottom:20,lineHeight:1.6}}>La connexion à Supabase a échoué. Vérifiez votre connexion internet, puis réessayez.<br/>Si le problème persiste, la base de données est peut-être en veille.</div>
+        <button onClick={fetchAll} style={{padding:"9px 22px",background:"#1a6bbf",color:"#fff",border:"none",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer"}}>🔄 Réessayer</button>
+      </div>
+    </div>
+  );
 
   return(
     <div style={{padding:"1rem 0",fontFamily:"Arial,sans-serif",color:"#111"}}>
@@ -2210,6 +2237,10 @@ export default function App(){
       {reportModal&&<ReportModal html={buildReport()} onClose={()=>setReportModal(false)}/> }
       {reunionModal&&<ReunionModal onClose={()=>{ setReunionModal(false); fetchAll(); }}/>}
 
+      {readOnly&&<div style={{background:"#fff8e1",border:"1px solid #ffe082",borderRadius:6,padding:"5px 12px",fontSize:11,color:"#7a6000",marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
+        👁 <b>Mode lecture seule</b> — Connectez-vous avec le mot de passe pour modifier les données.
+        <button onClick={()=>{sessionStorage.removeItem("app_authed");sessionStorage.removeItem("app_readonly");window.location.reload();}} style={{marginLeft:"auto",fontSize:10,padding:"2px 8px",background:"#fff",border:"1px solid #ccc",borderRadius:4,cursor:"pointer"}}>Se connecter</button>
+      </div>}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <img src={LOGO_URI} alt="Logo" style={{width:52,height:52,objectFit:"contain",background:"linear-gradient(135deg,#1a6bbf,#0d3f7a)",borderRadius:10,padding:6,flexShrink:0}}/>
