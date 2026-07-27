@@ -139,14 +139,23 @@ function taskLoadInPeriod(task, pStart, pEnd){
 }
 
 function taskDelay(task){
-  // Retourne un score : 1.0 = 100% (pile dans les délais)
-  // > 1.0 = en avance (ex: 1.2 = 120%), < 1.0 = en retard (ex: 0.8 = 80%)
+  // Retourne {score, duree} pour la moyenne pondérée
+  // score = (1 - ecart/duree)*100 : 100%=pile, >100%=avance, <100%=retard
   if(!task.completion_date || !task.deadline || !task.created_at) return null;
   const start=new Date(task.created_at), due=new Date(task.deadline), done=new Date(task.completion_date);
-  const denom=(due-start)/86400000;
-  if(denom<=0) return null;
+  const dur=(due-start)/86400000; // durée prévue en jours
+  if(dur<=0) return null;
   const ecart=(done-due)/86400000; // positif=retard, négatif=avance
-  return 1-(ecart/denom); // 100% si pile, >100% si avance, <100% si retard
+  return {score:(1-(ecart/dur))*100, dur};
+}
+
+function weightedDelayScore(delayItems){
+  // Moyenne pondérée par la durée
+  // delayItems = [{score, dur}, ...]
+  if(!delayItems.length) return null;
+  const totalDur=delayItems.reduce((s,d)=>s+d.dur,0);
+  if(totalDur<=0) return null;
+  return delayItems.reduce((s,d)=>s+(d.score*d.dur),0)/totalDur;
 }
 
 const ss={
@@ -864,9 +873,9 @@ function PilotCard({pilot,projects,tasks,todos,dateFrom,dateTo}){
     .filter(t=>{const raw=t.deadline||t.created_at;if(!raw)return true;const d=new Date(raw);if(dateFrom&&d<new Date(dateFrom))return false;if(dateTo&&d>new Date(dateTo))return false;return true;})
     .map(t=>taskDelay(t))
     .filter(v=>v!==null);
-  const avgScore = delays.length ? delays.reduce((s,v)=>s+v,0)/delays.length : null;
-  const delayColor = avgScore===null ? "#888" : avgScore>=1 ? "#27500A" : avgScore>=0.8 ? "#BA7517" : "#a32d2d";
-  const delayLabel = avgScore===null ? "Pas de données" : avgScore>=1 ? "Délais respectés ✓" : avgScore>=0.8 ? "Léger retard" : "Retard important";
+  const avgScore = weightedDelayScore(delays);
+  const delayColor = avgScore===null ? "#888" : avgScore>=100 ? "#27500A" : avgScore>=80 ? "#BA7517" : "#a32d2d";
+  const delayLabel = avgScore===null ? "Pas de données" : avgScore>=100 ? "Délais respectés ✓" : avgScore>=80 ? "Léger retard" : "Retard important";
   return(
     <div style={{background:"#fff",border:"1px solid #e0e0e0",borderRadius:10,padding:"12px 14px",marginBottom:12}}>
       <div style={{fontWeight:700,fontSize:14,marginBottom:10,paddingBottom:6,borderBottom:"2px solid #1a6bbf",display:"flex",alignItems:"center",gap:8}}>
@@ -881,7 +890,7 @@ function PilotCard({pilot,projects,tasks,todos,dateFrom,dateTo}){
         <div style={{background:"#f8faff",borderRadius:8,padding:"10px 12px",display:"flex",flexDirection:"column",justifyContent:"center"}}>
           <div style={{fontSize:11,fontWeight:600,color:"#1a6bbf",marginBottom:8}}>Indicateur de respect des délais</div>
           <div style={{fontSize:26,fontWeight:700,color:delayColor,marginBottom:2}}>
-            {avgScore===null?"—":(avgScore*100).toFixed(0)+"%"}
+            {avgScore===null?"—":avgScore.toFixed(0)+"%"}
           </div>
           <div style={{fontSize:11,color:delayColor,fontWeight:600}}>{delayLabel}</div>
           <div style={{fontSize:10,color:"#999",marginTop:4}}>{delays.length} tâche{delays.length>1?"s":""} terminée{delays.length>1?"s":""} avec date de fin renseignée</div>
@@ -1100,7 +1109,7 @@ function TodoView({pilots,todos,onRefresh}){
             </div>
             <div style={{display:"flex",gap:6,flexShrink:0}}>
               <button style={ss.btnS} onClick={()=>setModal({mode:"edit",data:{...todo}})}>Modifier</button>
-              <button style={ss.btnD} onClick={()=>delTodo(todo.id)}>Suppr.</button>
+              <button style={{...ss.btnD,...(readOnly?{opacity:0.35,cursor:'not-allowed',pointerEvents:'none'}:{})}} onClick={()=>!readOnly&&delTodo(todo.id)}>Suppr.</button>
             </div>
           </div>
         );
@@ -1886,11 +1895,12 @@ export default function App(){
     function delayInfo(pilotName){
       const d=tasks.filter(t=>(t.pilot===pilotName||t.pilot2===pilotName)&&t.status==="Terminé"&&t.completion_date).map(t=>taskDelay(t)).filter(v=>v!==null);
       if(!d.length)return{label:"Pas de données",value:"—",color:"#888",count:0};
-      const avg=d.reduce((s,v)=>s+v,0)/d.length;
+      const avg=weightedDelayScore(d);
+      if(avg===null)return{label:"Pas de données",value:"—",color:"#888",count:d.length};
       return{
-        label:avg>=1?"Délais respectés ✓":avg>=0.8?"Léger retard":"Retard important",
-        value:(avg*100).toFixed(0)+"%",
-        color:avg>=1?"#27500A":avg>=0.8?"#BA7517":"#d9534f",
+        label:avg>=100?"Délais respectés ✓":avg>=80?"Léger retard":"Retard important",
+        value:avg.toFixed(0)+"%",
+        color:avg>=100?"#27500A":avg>=80?"#BA7517":"#d9534f",
         count:d.length
       };
     }
@@ -2251,10 +2261,10 @@ export default function App(){
         </div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
           <button style={ss.btnS} onClick={fetchAll}>↻</button>
-          <button style={ss.btnS} onClick={()=>setPilotsModal(true)}>👥 Pilotes &amp; Centres</button>
+          <button style={{...ss.btnS,...(readOnly?{opacity:0.35,cursor:'not-allowed',pointerEvents:'none'}:{})}} onClick={()=>!readOnly&&setPilotsModal(true)}>👥 Pilotes &amp; Centres</button>
           <button style={ss.btnS} onClick={()=>setChangePwdModal(true)}>🔑</button>
           <button style={ss.btnS} onClick={()=>setGantt(true)}>Gantt</button>
-          <button style={{...ss.btnS,background:"#1D9E75",color:"#fff",border:"none"}} onClick={()=>setReunionModal(true)}>🗓 Réunion de service</button>
+          <button style={{...ss.btnS,background:"#1D9E75",color:"#fff",border:"none",...(readOnly?{opacity:0.35,cursor:'not-allowed',pointerEvents:'none'}:{})}} onClick={()=>!readOnly&&setReunionModal(true)}>🗓 Réunion de service</button>
           <button style={ss.btnP} onClick={()=>setReportModal(true)}>Bilan PDF</button>
         </div>
       </div>
@@ -2284,8 +2294,8 @@ export default function App(){
           {view==="projects"&&<select style={ss.sel} value={fSite} onChange={e=>setFSite(e.target.value)}><option value="">Tous les sites</option>{SITES.map(s=><option key={s}>{s}</option>)}</select>}
           {view==="tasks"&&<><select style={ss.sel} value={fTPrj} onChange={e=>setFTPrj(e.target.value)}><option value="">Tous les projets</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select><select style={ss.sel} value={fTSt} onChange={e=>setFTSt(e.target.value)}><option value="">Tous les statuts</option>{STATUSES.map(s=><option key={s}>{s}</option>)}</select><select style={ss.sel} value={fTSite} onChange={e=>setFTSite(e.target.value)}><option value="">Tous les sites</option>{SITES.map(s=><option key={s}>{s}</option>)}</select></>}
           <div style={{marginLeft:"auto"}}>
-            {view==="projects"&&<button style={ss.btnP} onClick={()=>setPModal({mode:"add",data:{...EP,pilot:pilots[0]?.name||""}})}>+ Nouveau projet</button>}
-            {view==="tasks"&&<button style={ss.btnP} onClick={()=>setTModal({mode:"add",data:{...ET,pilot:pilots[0]?.name||""}})}>+ Nouvelle tâche</button>}
+            {view==="projects"&&<button style={{...ss.btnP,...(readOnly?{opacity:0.35,cursor:'not-allowed',pointerEvents:'none'}:{})}} onClick={()=>!readOnly&&setPModal({mode:"add",data:{...EP,pilot:pilots[0]?.name||""}})}>+ Nouveau projet</button>}
+            {view==="tasks"&&<button style={{...ss.btnP,...(readOnly?{opacity:0.35,cursor:'not-allowed',pointerEvents:'none'}:{})}} onClick={()=>!readOnly&&setTModal({mode:"add",data:{...ET,pilot:pilots[0]?.name||""}})}>+ Nouvelle tâche</button>}
           </div>
         </div>
         <div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
@@ -2326,9 +2336,9 @@ export default function App(){
                 <PBar v={prog}/><span style={{fontSize:11,color:"#666",minWidth:32}}>{prog}%</span>
               </div>
               <div style={{display:"flex",gap:6}}>
-                <button style={ss.btnS} onClick={()=>setPModal({mode:"edit",data:{...p}})}>Modifier</button>
+                <button style={{...ss.btnS,...(readOnly?{opacity:0.35,cursor:'not-allowed',pointerEvents:'none'}:{})}} onClick={()=>!readOnly&&setPModal({mode:"edit",data:{...p}})}>Modifier</button>
                 <button style={ss.btnS} onClick={()=>{setView("tasks");setFTPrj(String(p.id));}}>Tâches</button>
-                <button style={ss.btnD} onClick={()=>delP(p.id)}>Supprimer</button>
+                <button style={{...ss.btnD,...(readOnly?{opacity:0.35,cursor:'not-allowed',pointerEvents:'none'}:{})}} onClick={()=>!readOnly&&delP(p.id)}>Supprimer</button>
               </div>
             </div>
           );
@@ -2356,8 +2366,8 @@ export default function App(){
                 <span style={{fontSize:10,color:"#bbb"}}>Début : {fd(t.created_at)}</span>
                 {(t.weight||0)>0&&<span style={{background:"#f0f0f0",borderRadius:4,padding:"1px 7px",fontSize:10,color:"#555",fontWeight:600}}>⏱ {t.weight}%</span>}
                 <div style={{display:"flex",gap:6,marginLeft:"auto"}}>
-                  <button style={ss.btnS} onClick={()=>setTModal({mode:"edit",data:{...t}})}>Modifier</button>
-                  <button style={ss.btnD} onClick={()=>delT(t.id)}>Suppr.</button>
+                  <button style={{...ss.btnS,...(readOnly?{opacity:0.35,cursor:'not-allowed',pointerEvents:'none'}:{})}} onClick={()=>!readOnly&&setTModal({mode:"edit",data:{...t}})}>Modifier</button>
+                  <button style={{...ss.btnD,...(readOnly?{opacity:0.35,cursor:'not-allowed',pointerEvents:'none'}:{})}} onClick={()=>!readOnly&&delT(t.id)}>Suppr.</button>
                 </div>
               </div>
               {t.notes&&<div style={{fontSize:11,color:"#555",background:"#fffbee",border:"1px solid #f0e68c",borderRadius:5,padding:"4px 9px",whiteSpace:"pre-wrap"}}>📝 {t.notes}</div>}
