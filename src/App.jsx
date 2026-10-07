@@ -592,7 +592,7 @@ function buildChargeSVG(projects,tasks,pilots,W=700){
     });
     return{label:weekLabel(wStart),wStart,loads};
   });
-  const CH=250,PL=45,PB=26,PT=20,PR=15;
+  const CH=270,PL=45,PB=46,PT=20,PR=15;
   const cW=W-PL-PR,cH=CH-PB-PT;
   const maxV=Math.max(120,...data.flatMap(d=>Object.values(d.loads)));
   const colW=cW/data.length;
@@ -628,9 +628,19 @@ function buildChargeSVG(projects,tasks,pilots,W=700){
     svg+=`<rect x="${x-10}" y="${CH-PB+3}" width="20" height="14" rx="3" fill="${isNow?"#1a6bbf":"transparent"}"/>`;
     svg+=`<text x="${x}" y="${CH-PB+13}" font-size="7.5" fill="${isNow?"#fff":"#666"}" text-anchor="middle" font-weight="${isNow?"bold":"normal"}">${d.label}</text>`;
   });
-  svg+=`<line x1="${PL}" y1="${PT}" x2="${PL}" y2="${CH-PB}" stroke="#ccc" stroke-width="1"/>`;
+   svg+=`<line x1="${PL}" y1="${PT}" x2="${PL}" y2="${CH-PB}" stroke="#ccc" stroke-width="1"/>`;
   svg+=`<line x1="${PL}" y1="${CH-PB}" x2="${W-PR}" y2="${CH-PB}" stroke="#ccc" stroke-width="1"/>`;
   svg+=`<text x="${W-PR}" y="${yp(100)-4}" font-size="8" fill="#e24b4a" text-anchor="end">Seuil 100%</text>`;
+  // Légende pilotes dans le SVG
+  const legY=CH-6;
+  const legItemW=Math.min(100,(W-PL-PR)/Math.max(pilots.length,1));
+  pilots.forEach((p,pi)=>{
+    const col=GCOLS[pi%GCOLS.length];
+    const lx=PL+(pi*legItemW);
+    const shortName=p.name.split(" ")[0];
+    svg+=`<circle cx="${lx+6}" cy="${legY}" r="4.5" fill="${col}" stroke="#fff" stroke-width="1"/>`;
+    svg+=`<text x="${lx+14}" y="${legY+4}" font-size="9" fill="#333" font-family="Arial,sans-serif">${shortName}</text>`;
+  });
   svg+=`</svg>`;
   return svg;
 }
@@ -941,10 +951,14 @@ function StatsView({projects,tasks,pilots,todos,dateFrom,setDateFrom,dateTo,setD
 function ReportModal({html, onClose}){
   const iframeRef = useRef(null);
   function handlePrint(){
-    const iframe = iframeRef.current;
-    if(!iframe) return;
-    iframe.contentWindow.focus();
-    iframe.contentWindow.print();
+    // Ouvre le HTML dans un nouvel onglet et lance l'impression
+    const blob = new Blob([html], {type: "text/html;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, "_blank");
+    if(!win){ alert("Autorisez les pop-ups pour ce site pour imprimer le bilan."); URL.revokeObjectURL(url); return; }
+    win.addEventListener("load", ()=>{
+      setTimeout(()=>{ win.print(); URL.revokeObjectURL(url); }, 500);
+    });
   }
   return(
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center",padding:12}}>
