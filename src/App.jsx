@@ -1942,12 +1942,9 @@ export default function App(){
     // ── Courbe de charge ──
     const chargeSvg=buildChargeSVG(projects,tasks,pilots,970);
     const chargeBlock=`
-    <div style="margin-bottom:12px">
+     <div style="margin-bottom:12px">
       <div style="font-size:12px;font-weight:700;color:#1a6bbf;padding-bottom:5px;border-bottom:2px solid #1a6bbf;margin-bottom:10px">📈 Évolution de la charge — 12 mois</div>
       ${chargeSvg}
-      <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:8px">
-        ${pilots.map((p,i)=>`<span style="display:flex;align-items:center;gap:5px;font-size:9px"><span style="width:10px;height:10px;border-radius:50%;background:${GCOLS[i%GCOLS.length]};display:inline-block"></span>${p.name}</span>`).join("")}
-      </div>
     </div>`;
     // ── Détail projets ──
     const projRows=projects.map((p,pi)=>{
